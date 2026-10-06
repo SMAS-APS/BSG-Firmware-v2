@@ -1,0 +1,27 @@
+[Unit]
+Description=BSG Bresser weather gateway
+Documentation=file:///opt/bsg-gateway/README.md
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=bsg-gateway
+Group=bsg-gateway
+SupplementaryGroups=spi gpio
+WorkingDirectory=/opt/bsg-gateway
+Environment=PYTHONUNBUFFERED=1
+Environment=BSG_CONFIG=/etc/bsg-gateway/config.json
+ExecStart=/usr/bin/python3 /opt/bsg-gateway/gateway.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

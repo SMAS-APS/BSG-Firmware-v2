@@ -1,0 +1,26 @@
+{
+  "wifi": {
+    "ssid": "",
+    "password": ""
+  },
+  "amms": {
+    "token": "",
+    "url": "https://weather.iacca.ml/api/data/point",
+    "timeout_seconds": 15
+  },
+  "radio": {
+    "spi_host": 3,
+    "sck": 18,
+    "mosi": 23,
+    "miso": 19,
+    "cs": 27,
+    "reset": 32,
+    "dio0": 21,
+    "frequency_hz": 868300000,
+    "frequency_offset_hz": 0
+  },
+  "runtime": {
+    "poll_interval_ms": 25,
+    "reconnect_interval_seconds": 15
+  }
+}
