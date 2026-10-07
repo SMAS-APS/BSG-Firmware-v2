@@ -2,12 +2,18 @@ include("$(PORT_DIR)/boards/manifest.py")
 require("ntptime")
 
 freeze("modules", (
-    "amms.py",
-    "ca_cert.py",
     "config_store.py",
     "main_app.py",
-    "secure_http.py",
     "wifi_manager.py",
+))
+
+freeze("../external/AMMSUtils", (
+    "amms/__init__.py",
+    "amms/client.py",
+    "amms/payload.py",
+    "amms/transports/__init__.py",
+    "amms/transports/ca_cert.py",
+    "amms/transports/micropython_http.py",
 ))
 
 freeze(".", (

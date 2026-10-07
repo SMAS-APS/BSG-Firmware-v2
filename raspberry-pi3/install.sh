@@ -7,6 +7,7 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 SERVICE_FILE="/etc/systemd/system/bsg-gateway.service"
 SERVICE_NAME="bsg-gateway.service"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+AMMS_SOURCE="$SCRIPT_DIR/../external/AMMSUtils/amms"
 
 AMMS_TOKEN="${AMMS_TOKEN:-}"
 AMMS_URL="${AMMS_URL:-https://weather.iacca.ml/api/data/point}"
@@ -64,6 +65,12 @@ for source_file in gateway.py bresser_native.py config.example.json bsg-gateway.
     }
 done
 
+if [[ ! -f "$AMMS_SOURCE/__init__.py" ]]; then
+    echo "Submodule AMMSUtils mancante." >&2
+    echo "Dalla radice del repository eseguire: git submodule update --init --recursive" >&2
+    exit 1
+fi
+
 if [[ ! -f "$CONFIG_FILE" && -z "$AMMS_TOKEN" ]]; then
     if [[ -t 0 ]]; then
         read -r -s -p "Token AMMS: " AMMS_TOKEN
@@ -108,6 +115,17 @@ install -o root -g bsg-gateway -m 0644 \
     "$SCRIPT_DIR/bresser_native.py" \
     "$SCRIPT_DIR/README.md" \
     "$INSTALL_DIR/"
+install -d -o root -g bsg-gateway -m 0755 \
+    "$INSTALL_DIR/amms" "$INSTALL_DIR/amms/transports"
+install -o root -g bsg-gateway -m 0644 \
+    "$AMMS_SOURCE/__init__.py" \
+    "$AMMS_SOURCE/client.py" \
+    "$AMMS_SOURCE/payload.py" \
+    "$INSTALL_DIR/amms/"
+install -o root -g bsg-gateway -m 0644 \
+    "$AMMS_SOURCE/transports/__init__.py" \
+    "$AMMS_SOURCE/transports/cpython_http.py" \
+    "$INSTALL_DIR/amms/transports/"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
     install -o root -g bsg-gateway -m 0640 \
@@ -160,7 +178,7 @@ systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
 echo "[6/6] Controllo finale"
-PYTHONPATH="$INSTALL_DIR" python3 -c "import bresser_native; print('Decoder Python importato correttamente')"
+PYTHONPATH="$INSTALL_DIR" python3 -c "import amms, bresser_native; print('AMMSUtils e decoder importati correttamente')"
 
 if ((START_SERVICE == 1)); then
     if [[ -e /dev/spidev0.0 ]]; then

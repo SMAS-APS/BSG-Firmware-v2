@@ -13,6 +13,12 @@ Servono:
 
 Queste istruzioni sono predisposte per MicroPython `v1.29.0`.
 
+Inizializzare prima la dipendenza AMMSUtils dalla radice del repository:
+
+```sh
+git submodule update --init --recursive
+```
+
 ## 1. Recuperare MicroPython
 
 Eseguire da una directory di lavoro esterna a questo repository:

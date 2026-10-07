@@ -39,11 +39,8 @@ esp32/
 |-- manifest.py
 |-- config.example.json
 |-- modules/
-|   |-- amms.py
-|   |-- ca_cert.py
 |   |-- config_store.py
 |   |-- main_app.py
-|   |-- secure_http.py
 |   `-- wifi_manager.py
 |-- native/
 |   |-- micropython.cmake
@@ -57,6 +54,8 @@ esp32/
 |   `-- test_decoder.cpp
 `-- BUILDING.md
 ```
+
+Il client AMMS e i trasporti HTTPS sono forniti dal submodule `../external/AMMSUtils` e vengono congelati nel firmware dal manifest.
 
 ## API del modulo nativo
 

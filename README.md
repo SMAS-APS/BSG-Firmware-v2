@@ -7,6 +7,12 @@ Il repository contiene due implementazioni separate del gateway per stazioni met
 
 Entrambe leggono lo stesso protocollo radio e inviano ad AMMS lo stesso payload JSON. Il codice hardware non è condiviso: ESP32 usa ESP-IDF, mentre Raspberry Pi usa le interfacce Linux SPI e GPIO.
 
+Il client AMMS comune proviene dal submodule [`external/AMMSUtils`](external/AMMSUtils), fissato a una versione verificata. Dopo il clone inizializzarlo con:
+
+```sh
+git submodule update --init --recursive
+```
+
 ## Quale versione usare
 
 | Piattaforma | Runtime | Installazione | Riavvio dopo crash |

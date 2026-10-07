@@ -5,13 +5,12 @@ import json
 import logging
 import os
 import signal
-import ssl
 import sys
 import time
-import urllib.error
-import urllib.request
 
 import bresser_native
+from amms import AMMSClient, AMMSPayload
+from amms.transports.cpython_http import post_json
 
 
 CONFIG_PATH = os.environ.get("BSG_CONFIG", "/etc/bsg-gateway/config.json")
@@ -38,7 +37,7 @@ def load_config(path):
 
 
 def payload_from_reading(reading):
-    sensors = {}
+    payload = AMMSPayload()
     for source, destination in (
         ("temperature", "temperature"),
         ("humidity", "humidity"),
@@ -48,28 +47,8 @@ def payload_from_reading(reading):
     ):
         value = reading.get(source)
         if value is not None:
-            sensors[destination] = value
-    return {"sensors": sensors, "station": {}}
-
-
-def send_to_amms(reading, config):
-    amms = config["amms"]
-    encoded = json.dumps(payload_from_reading(reading)).encode("utf-8")
-    request = urllib.request.Request(
-        amms["url"],
-        data=encoded,
-        headers={
-            "Authorization": "Bearer " + amms["token"],
-            "Content-Type": "application/json",
-            "User-Agent": "BSG-RaspberryPi/1.0",
-        },
-        method="POST",
-    )
-    context = ssl.create_default_context()
-    timeout = int(amms.get("timeout_seconds", 15))
-    with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
-        body = response.read(4096).decode("utf-8", "replace")
-        return response.status, body
+            payload.set_sensor(destination, value)
+    return payload
 
 
 def configure_logging(config):
@@ -98,6 +77,14 @@ def run():
     config = load_config(CONFIG_PATH)
     configure_logging(config)
     init_radio(config)
+    amms = config["amms"]
+    client = AMMSClient(
+        amms["token"],
+        post_json,
+        url=amms["url"],
+        timeout_seconds=int(amms.get("timeout_seconds", 15)),
+        user_agent="BSG-RaspberryPi/2.0",
+    )
 
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
@@ -118,11 +105,16 @@ def run():
             reading = bresser_native.poll()
             if reading is not None:
                 logging.info("Ricevuto: %s", reading)
-                try:
-                    status, body = send_to_amms(reading, config)
-                    logging.info("AMMS HTTP %s: %s", status, body[:300])
-                except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
-                    logging.exception("Invio AMMS non riuscito: %s", exc)
+                result = client.send(payload_from_reading(reading))
+                if result.ok:
+                    logging.info("AMMS HTTP %s: %s", result.http_status, result.body[:300])
+                else:
+                    logging.warning(
+                        "Invio AMMS non riuscito: %s; HTTP=%s; risposta=%s",
+                        result.error,
+                        result.http_status,
+                        result.body[:300],
+                    )
             if time.monotonic() >= next_stats:
                 logging.info("Statistiche ricevitore: %s", bresser_native.stats())
                 next_stats = time.monotonic() + stats_interval

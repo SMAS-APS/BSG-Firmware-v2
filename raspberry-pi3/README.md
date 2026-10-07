@@ -24,7 +24,20 @@ Il modulo deve essere alimentato esclusivamente a 3,3 V. Collegarlo a 5 V può d
 
 ## Installazione rapida
 
-Configurare prima il Raspberry Pi sulla rete Wi-Fi desiderata, quindi copiare questa cartella sul dispositivo ed eseguire:
+Configurare prima il Raspberry Pi sulla rete Wi-Fi desiderata, quindi clonare l'intero repository con la dipendenza AMMSUtils:
+
+```sh
+git clone --recurse-submodules https://github.com/SMAS-APS/BSG-Firmware-v2.git
+cd BSG-Firmware-v2
+```
+
+Se il repository è stato clonato senza dipendenze, dalla sua radice eseguire prima:
+
+```sh
+git submodule update --init --recursive
+```
+
+Poi installare:
 
 ```sh
 cd raspberry-pi3

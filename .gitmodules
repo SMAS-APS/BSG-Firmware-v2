@@ -1,0 +1,3 @@
+[submodule "external/AMMSUtils"]
+	path = external/AMMSUtils
+	url = ../AMMSUtils

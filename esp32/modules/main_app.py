@@ -3,7 +3,8 @@ import time
 
 import bresser_native
 
-from amms import AMMSClient
+from amms import AMMSClient, AMMSPayload
+from amms.transports.micropython_http import post_json
 from config_store import is_provisioned, load
 import wifi_manager
 
@@ -34,6 +35,21 @@ def _init_radio(radio):
     print("Ricevitore:", bresser_native.status())
 
 
+def _payload_from_reading(reading):
+    payload = AMMSPayload()
+    for source, destination in (
+        ("temperature", "temperature"),
+        ("humidity", "humidity"),
+        ("wind_speed", "wind_speed"),
+        ("wind_direction", "wind_direction"),
+        ("precipitation", "precipitation"),
+    ):
+        value = reading.get(source)
+        if value is not None:
+            payload.set_sensor(destination, value)
+    return payload
+
+
 def run():
     config = load()
     if not is_provisioned(config):
@@ -54,8 +70,10 @@ def run():
     amms_config = config["amms"]
     client = AMMSClient(
         amms_config["token"],
-        amms_config["url"],
-        int(amms_config.get("timeout_seconds", 15)),
+        post_json,
+        url=amms_config["url"],
+        timeout_seconds=int(amms_config.get("timeout_seconds", 15)),
+        user_agent="BSG-MicroPython/2.0",
     )
 
     poll_interval = int(config["runtime"].get("poll_interval_ms", 25))
@@ -69,8 +87,11 @@ def run():
             print("Ricevuto:", reading)
             try:
                 wifi_manager.ensure_connected(config, timeout_seconds=reconnect_interval)
-                response = client.send(reading)
-                print("AMMS:", response.status)
+                result = client.send(_payload_from_reading(reading))
+                if result.ok:
+                    print("AMMS:", result.http_status)
+                else:
+                    print("Invio AMMS non riuscito:", result.error, result.body)
             except Exception as exc:
                 print("Invio AMMS non riuscito:", exc)
             finally:
