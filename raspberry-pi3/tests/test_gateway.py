@@ -8,6 +8,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "external" / "AMMSUtils"))
 sys.path.insert(0, str(REPOSITORY_ROOT / "raspberry-pi3"))
 
 import gateway
+from amms import HMACAuth
 
 
 class GatewayPayloadTests(unittest.TestCase):
@@ -38,6 +39,32 @@ class GatewayPayloadTests(unittest.TestCase):
                 "station": {},
             },
         )
+
+    def test_builds_hmac_authentication(self):
+        auth = gateway._authentication(
+            {
+                "auth_mode": "hmac-sha256",
+                "station_id": "bsg-test",
+                "key_id": "key-test",
+                "secret_hex": "01" * 32,
+            }
+        )
+        self.assertIsInstance(auth, HMACAuth)
+
+    def test_accepts_legacy_bearer_configuration(self):
+        auth = gateway._authentication({"token": "legacy-secret"})
+        self.assertIsNone(auth)
+
+    def test_rejects_incomplete_hmac_configuration(self):
+        with self.assertRaises(ValueError):
+            gateway._authentication(
+                {
+                    "auth_mode": "hmac-sha256",
+                    "station_id": "bsg-test",
+                    "key_id": "key-test",
+                    "secret_hex": "",
+                }
+            )
 
 
 if __name__ == "__main__":

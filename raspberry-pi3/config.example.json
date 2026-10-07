@@ -1,5 +1,9 @@
 {
   "amms": {
+    "auth_mode": "hmac-sha256",
+    "station_id": "",
+    "key_id": "",
+    "secret_hex": "",
     "token": "",
     "url": "https://weather.iacca.ml/api/data/point",
     "timeout_seconds": 15

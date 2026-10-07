@@ -9,7 +9,9 @@ freeze("modules", (
 
 freeze("../external/AMMSUtils", (
     "amms/__init__.py",
+    "amms/auth.py",
     "amms/client.py",
+    "amms/credentials.py",
     "amms/payload.py",
     "amms/transports/__init__.py",
     "amms/transports/ca_cert.py",

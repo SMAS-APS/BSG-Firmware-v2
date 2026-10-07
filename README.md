@@ -20,6 +20,6 @@ git submodule update --init --recursive
 | ESP32 | MicroPython + modulo C++ | compilazione firmware personalizzato | riavvio della scheda |
 | Raspberry Pi 3 | Python 3 su Raspberry Pi OS | `sudo bash install.sh` | automatico tramite `systemd` |
 
-Per le due stazioni basate su Raspberry Pi 3, seguire la guida in [`raspberry-pi3/README.md`](raspberry-pi3/README.md). Ogni Raspberry deve avere il proprio `/etc/bsg-gateway/config.json` con il token AMMS corretto.
+Per le due stazioni basate su Raspberry Pi 3, seguire la guida in [`raspberry-pi3/README.md`](raspberry-pi3/README.md). Ogni Raspberry genera una propria identita' e una chiave HMAC indipendente; i token Bearer rimangono disponibili soltanto per compatibilita' durante la migrazione.
 
-Non inserire token reali nei file versionati.
+Non inserire token o chiavi reali nei file versionati.

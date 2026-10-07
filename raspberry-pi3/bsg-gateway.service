@@ -1,4 +1,5 @@
 [Unit]
+ConditionPathExists=!/etc/bsg-gateway/enrollment.json
 Description=BSG Bresser weather gateway
 Documentation=file:///opt/bsg-gateway/README.md
 Wants=network-online.target

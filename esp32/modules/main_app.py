@@ -3,7 +3,7 @@ import time
 
 import bresser_native
 
-from amms import AMMSClient, AMMSPayload
+from amms import AMMSClient, AMMSPayload, HMACAuth
 from amms.transports.micropython_http import post_json
 from config_store import is_provisioned, load
 import wifi_manager
@@ -68,12 +68,19 @@ def run():
     _init_radio(config["radio"])
 
     amms_config = config["amms"]
+    auth = None
+    auth_mode = amms_config.get("auth_mode", "")
+    if auth_mode == "hmac-sha256":
+        auth = HMACAuth.from_config(amms_config)
+    elif auth_mode != "bearer":
+        raise ValueError("modalita' di autenticazione AMMS non supportata")
     client = AMMSClient(
-        amms_config["token"],
+        amms_config.get("token", ""),
         post_json,
         url=amms_config["url"],
         timeout_seconds=int(amms_config.get("timeout_seconds", 15)),
         user_agent="BSG-MicroPython/2.0",
+        auth=auth,
     )
 
     poll_interval = int(config["runtime"].get("poll_interval_ms", 25))

@@ -4,7 +4,7 @@ Questa cartella contiene il firmware ESP32 del gateway Bresser con:
 
 - logica applicativa in MicroPython;
 - configurazione Wi-Fi tramite pagina Web locale;
-- invio JSON al server AMMS tramite HTTPS con verifica del certificato;
+- invio JSON firmato HMAC-SHA256 al server AMMS tramite HTTPS con verifica del certificato;
 - ricevitore RFM95W/SX1276 e decoder Bresser 5-in-1 in C++ nativo;
 - test del decoder eseguibili anche senza scheda ESP32.
 
@@ -91,11 +91,18 @@ Sono inoltre disponibili:
 
 1. Compilare il firmware seguendo [BUILDING.md](BUILDING.md).
 2. Installarlo sull'ESP32.
-3. Copiare `config.example.json` sulla scheda come `/config.json` e inserire il token AMMS, oppure lasciare che il dispositivo apra la rete `Bresser Gateway`.
-4. Collegarsi alla rete temporanea e aprire `http://192.168.4.1`.
-5. Inserire Wi-Fi, token e URL API.
+3. Registrare la stazione sul server e ottenere `station_id`, `key_id` e `secret_hex`.
+4. Copiare `config.example.json` sulla scheda come `/config.json` e inserire le credenziali, oppure lasciare che il dispositivo apra la rete `Bresser Gateway`.
+5. Collegarsi alla rete temporanea e aprire `http://192.168.4.1`.
+6. Inserire Wi-Fi, credenziali HMAC e URL API.
 
-Non inserire token reali nei file versionati.
+Non inserire token o chiavi reali nei file versionati. Il token Bearer e' ancora
+supportato selezionando `bearer`, esclusivamente per la migrazione di installazioni
+esistenti.
+
+La rete di configurazione locale di questa prima versione non e' cifrata. Per una
+stazione di produzione e' quindi preferibile copiare `/config.json` tramite collegamento
+USB/seriale; usare la pagina Web soltanto in un ambiente fisicamente controllato.
 
 ## Limiti iniziali
 

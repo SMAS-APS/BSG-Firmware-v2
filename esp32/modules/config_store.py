@@ -9,6 +9,10 @@ DEFAULT_CONFIG = {
         "password": "",
     },
     "amms": {
+        "auth_mode": "hmac-sha256",
+        "station_id": "",
+        "key_id": "",
+        "secret_hex": "",
         "token": "",
         "url": "https://weather.iacca.ml/api/data/point",
         "timeout_seconds": 15,
@@ -49,6 +53,13 @@ def load(path=CONFIG_PATH):
     for section, values in stored.items():
         if section in config and isinstance(values, dict):
             config[section].update(values)
+    stored_amms = stored.get("amms", {})
+    if (
+        isinstance(stored_amms, dict)
+        and "auth_mode" not in stored_amms
+        and stored_amms.get("token")
+    ):
+        config["amms"]["auth_mode"] = "bearer"
     return config
 
 
@@ -70,4 +81,11 @@ def save(config, path=CONFIG_PATH):
 
 
 def is_provisioned(config):
-    return bool(config["wifi"].get("ssid") and config["amms"].get("token"))
+    amms = config["amms"]
+    if amms.get("auth_mode") == "hmac-sha256":
+        authentication_ready = all(
+            amms.get(name) for name in ("station_id", "key_id", "secret_hex")
+        )
+    else:
+        authentication_ready = bool(amms.get("token"))
+    return bool(config["wifi"].get("ssid") and authentication_ready)

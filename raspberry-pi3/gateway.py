@@ -9,7 +9,7 @@ import sys
 import time
 
 import bresser_native
-from amms import AMMSClient, AMMSPayload
+from amms import AMMSClient, AMMSPayload, HMACAuth
 from amms.transports.cpython_http import post_json
 
 
@@ -27,13 +27,27 @@ def load_config(path):
     with open(path, "r", encoding="utf-8") as stream:
         config = json.load(stream)
 
-    token = config.get("amms", {}).get("token", "").strip()
-    url = config.get("amms", {}).get("url", "").strip()
-    if not token:
-        raise ValueError("token AMMS mancante in %s" % path)
+    amms = config.get("amms", {})
+    url = amms.get("url", "").strip()
     if not url.startswith("https://"):
         raise ValueError("l'URL AMMS deve iniziare con https://")
+    _authentication(amms)
     return config
+
+
+def _authentication(amms):
+    mode = amms.get("auth_mode", "").strip().lower()
+    has_hmac = all(
+        amms.get(name, "").strip()
+        for name in ("station_id", "key_id", "secret_hex")
+    )
+    if mode == "hmac-sha256" or (not mode and has_hmac):
+        return HMACAuth.from_config(amms)
+    if mode not in ("", "bearer"):
+        raise ValueError("modalita' di autenticazione AMMS non supportata")
+    if not amms.get("token", "").strip():
+        raise ValueError("credenziali AMMS mancanti")
+    return None
 
 
 def payload_from_reading(reading):
@@ -78,12 +92,14 @@ def run():
     configure_logging(config)
     init_radio(config)
     amms = config["amms"]
+    auth = _authentication(amms)
     client = AMMSClient(
-        amms["token"],
+        amms.get("token", ""),
         post_json,
         url=amms["url"],
         timeout_seconds=int(amms.get("timeout_seconds", 15)),
         user_agent="BSG-RaspberryPi/2.0",
+        auth=auth,
     )
 
     signal.signal(signal.SIGTERM, _request_stop)

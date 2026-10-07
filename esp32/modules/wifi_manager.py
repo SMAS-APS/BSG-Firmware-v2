@@ -105,7 +105,13 @@ button{margin-top:1.4rem;padding:.7rem 1rem}.message{color:#075}</style></head>
 <form method=\"post\" action=\"/save\">
 <label>Nome rete Wi-Fi<input name=\"ssid\" required></label>
 <label>Password Wi-Fi<input name=\"password\" type=\"password\"></label>
-<label>Token AMMS<input name=\"token\" type=\"password\" required></label>
+<label>Modalita' autenticazione<select name=\"auth_mode\">
+<option value=\"hmac-sha256\">HMAC-SHA256</option><option value=\"bearer\">Bearer legacy</option>
+</select></label>
+<label>ID stazione<input name=\"station_id\"></label>
+<label>ID chiave<input name=\"key_id\"></label>
+<label>Chiave HMAC esadecimale<input name=\"secret_hex\" type=\"password\"></label>
+<label>Token AMMS legacy<input name=\"token\" type=\"password\"></label>
 <label>URL API<input name=\"url\" value=\"https://weather.iacca.ml/api/data/point\" required></label>
 <button type=\"submit\">Salva e riavvia</button></form></body></html>""" % message
 
@@ -143,6 +149,10 @@ def provision(config, ap_name="Bresser Gateway"):
                     form = _parse_form(client.read(length))
                     config["wifi"]["ssid"] = form.get("ssid", "")
                     config["wifi"]["password"] = form.get("password", "")
+                    config["amms"]["auth_mode"] = form.get("auth_mode", "hmac-sha256")
+                    config["amms"]["station_id"] = form.get("station_id", "")
+                    config["amms"]["key_id"] = form.get("key_id", "")
+                    config["amms"]["secret_hex"] = form.get("secret_hex", "")
                     config["amms"]["token"] = form.get("token", "")
                     config["amms"]["url"] = form.get("url", config["amms"]["url"])
                     save(config)

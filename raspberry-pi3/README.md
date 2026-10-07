@@ -44,7 +44,42 @@ cd raspberry-pi3
 sudo bash install.sh
 ```
 
-Alla prima installazione viene chiesto il token AMMS senza mostrarlo sullo schermo. In alternativa, per un'installazione non interattiva:
+Alla prima installazione vengono generati automaticamente `station_id`, `key_id` e
+una chiave HMAC-SHA256 da 256 bit. Le credenziali non vengono rigenerate durante gli
+aggiornamenti.
+
+Se il server espone l'endpoint di registrazione, e' possibile completare tutto in un
+solo passaggio. Il codice monouso non deve essere scritto nella riga di comando:
+
+```sh
+sudo AMMS_ENROLL_CODE='CODICE_MONOUSO' bash install.sh \
+  --enroll-url 'https://weather.iacca.ml/api/stations/enroll'
+```
+
+Senza `--enroll-url`, lo script crea il file protetto
+`/etc/bsg-gateway/enrollment.json` e lascia il servizio fermo. Importare quel file
+nel server, eliminarlo dal Raspberry e avviare il servizio:
+
+```sh
+sudo rm /etc/bsg-gateway/enrollment.json
+sudo systemctl start bsg-gateway.service
+```
+
+Finche' il file di registrazione esiste, anche l'avvio automatico al boot resta
+bloccato dalla condizione configurata nell'unita' `systemd`.
+
+Il server deve accettare il documento JSON soltanto previa verifica di un codice
+monouso e rispondere con uno stato HTTP `2xx`. La trasmissione avviene esclusivamente
+tramite HTTPS con verifica del certificato.
+
+Per ruotare la chiave mantenendo l'identificativo della stazione:
+
+```sh
+sudo AMMS_ENROLL_CODE='NUOVO_CODICE' bash install.sh --rotate-key \
+  --enroll-url 'https://weather.iacca.ml/api/stations/enroll'
+```
+
+Durante la migrazione e' ancora possibile installare con il vecchio token Bearer:
 
 ```sh
 sudo bash install.sh --token 'TOKEN_AMMS'
@@ -56,7 +91,7 @@ Lo script:
 2. abilita SPI;
 3. crea l'utente limitato `bsg-gateway`;
 4. installa l'applicazione in `/opt/bsg-gateway`;
-5. salva la configurazione in `/etc/bsg-gateway/config.json`;
+5. genera e salva le credenziali in `/etc/bsg-gateway/config.json`;
 6. abilita e avvia `bsg-gateway.service`.
 
 Se SPI diventa disponibile soltanto dopo il riavvio, l'installer lo segnala. In quel caso basta eseguire:
@@ -77,14 +112,16 @@ Il riavvio automatico è configurato in `bsg-gateway.service` con `Restart=on-fa
 
 ## Configurazione
 
-Per modificare token, URL, frequenza o pin:
+Per modificare credenziali, URL, frequenza o pin:
 
 ```sh
 sudoedit /etc/bsg-gateway/config.json
 sudo systemctl restart bsg-gateway.service
 ```
 
-Per due stazioni installare il progetto separatamente sui due Raspberry Pi e assegnare a ciascuno il token previsto. Il file di configurazione ha permessi limitati e non viene sovrascritto quando si rilancia l'installer.
+Per due stazioni eseguire l'installazione separatamente sui due Raspberry Pi: ogni
+dispositivo ricevera' una chiave differente. Il file di configurazione ha permessi
+limitati e non viene sovrascritto quando si rilancia l'installer.
 
 ## Test senza radio
 
