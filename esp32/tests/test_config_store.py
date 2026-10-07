@@ -26,11 +26,18 @@ class ConfigStoreTests(unittest.TestCase):
             }
         )
         self.assertEqual(config["amms"]["auth_mode"], "bearer")
+        self.assertEqual(config["amms"]["transport"], "http")
         self.assertTrue(config_store.is_provisioned(config))
+
+    def test_new_configuration_defaults_to_mqtt(self):
+        config = config_store.load("file-that-does-not-exist.json")
+        self.assertEqual(config["amms"]["transport"], "mqtt")
+        self.assertEqual(config["amms"]["mqtt_port"], 8883)
 
     def test_hmac_requires_all_credentials(self):
         config = config_store._copy_defaults()
         config["wifi"]["ssid"] = "test"
+        config["amms"]["transport"] = "http"
         self.assertFalse(config_store.is_provisioned(config))
         config["amms"].update(
             {

@@ -18,6 +18,10 @@ fi
 AMMS_URL="${AMMS_URL:-https://weather.iacca.ml/api/data/point}"
 AMMS_ENROLL_URL="${AMMS_ENROLL_URL:-}"
 AMMS_ENROLL_CODE="${AMMS_ENROLL_CODE:-}"
+AMMS_TRANSPORT="${AMMS_TRANSPORT:-}"
+AMMS_MQTT_HOST="${AMMS_MQTT_HOST:-}"
+AMMS_MQTT_PORT="${AMMS_MQTT_PORT:-8883}"
+AMMS_MQTT_CA_URL="${AMMS_MQTT_CA_URL:-}"
 ROTATE_KEY=0
 START_SERVICE=1
 
@@ -29,6 +33,10 @@ Opzioni:
   --token TOKEN       usa il token Bearer legacy invece di HMAC
   --url URL           URL HTTPS per l'invio dei dati
   --enroll-url URL    registra automaticamente la chiave tramite HTTPS
+  --mqtt-host HOST    usa MQTT/TLS e pubblica verso questo broker
+  --mqtt-port PORT    porta MQTT/TLS (predefinita: 8883)
+  --mqtt-ca-url URL   URL HTTPS del certificato CA MQTT
+  --http              mantiene il trasporto HTTPS tradizionale
   --rotate-key        genera una nuova chiave mantenendo l'ID stazione
   --no-start          installa e abilita il servizio senza avviarlo subito
   -h, --help          mostra questo aiuto
@@ -60,6 +68,26 @@ while (($#)); do
             ROTATE_KEY=1
             shift
             ;;
+        --mqtt-host)
+            [[ $# -ge 2 ]] || { echo "Manca il valore di --mqtt-host" >&2; exit 2; }
+            AMMS_MQTT_HOST="$2"
+            AMMS_TRANSPORT="mqtt"
+            shift 2
+            ;;
+        --mqtt-port)
+            [[ $# -ge 2 ]] || { echo "Manca il valore di --mqtt-port" >&2; exit 2; }
+            AMMS_MQTT_PORT="$2"
+            shift 2
+            ;;
+        --mqtt-ca-url)
+            [[ $# -ge 2 ]] || { echo "Manca il valore di --mqtt-ca-url" >&2; exit 2; }
+            AMMS_MQTT_CA_URL="$2"
+            shift 2
+            ;;
+        --http)
+            AMMS_TRANSPORT="http"
+            shift
+            ;;
         --no-start)
             START_SERVICE=0
             shift
@@ -81,7 +109,7 @@ if ((EUID != 0)); then
     exit 1
 fi
 
-for source_file in gateway.py bresser_native.py config.example.json bsg-gateway.service README.md; do
+for source_file in gateway.py bresser_native.py mqtt_transport.py config.example.json bsg-gateway.service README.md; do
     [[ -f "$SCRIPT_DIR/$source_file" ]] || {
         echo "File mancante: $SCRIPT_DIR/$source_file" >&2
         exit 1
@@ -102,10 +130,18 @@ if [[ -n "$AMMS_ENROLL_URL" && "$AMMS_ENROLL_URL" != https://* ]]; then
     echo "L'URL di registrazione deve iniziare con https://" >&2
     exit 2
 fi
+if [[ -n "$AMMS_MQTT_CA_URL" && "$AMMS_MQTT_CA_URL" != https://* ]]; then
+    echo "L'URL della CA MQTT deve iniziare con https://" >&2
+    exit 2
+fi
+[[ "$AMMS_MQTT_PORT" =~ ^[0-9]+$ ]] || {
+    echo "La porta MQTT deve essere numerica" >&2
+    exit 2
+}
 
 echo "[1/6] Installazione dipendenze di sistema"
 apt-get update
-packages=(python3 python3-spidev python3-gpiozero ca-certificates)
+packages=(python3 python3-spidev python3-gpiozero python3-paho-mqtt ca-certificates)
 if apt-cache show python3-lgpio >/dev/null 2>&1; then
     packages+=(python3-lgpio)
 else
@@ -130,6 +166,7 @@ install -d -o root -g bsg-gateway -m 0750 "$INSTALL_DIR" "$CONFIG_DIR"
 install -o root -g bsg-gateway -m 0644 \
     "$SCRIPT_DIR/gateway.py" \
     "$SCRIPT_DIR/bresser_native.py" \
+    "$SCRIPT_DIR/mqtt_transport.py" \
     "$SCRIPT_DIR/README.md" \
     "$INSTALL_DIR/"
 install -d -o root -g bsg-gateway -m 0755 \
@@ -140,6 +177,7 @@ install -o root -g bsg-gateway -m 0644 \
     "$AMMS_SOURCE/client.py" \
     "$AMMS_SOURCE/credentials.py" \
     "$AMMS_SOURCE/payload.py" \
+    "$AMMS_SOURCE/mqtt.py" \
     "$INSTALL_DIR/amms/"
 install -o root -g bsg-gateway -m 0644 \
     "$AMMS_SOURCE/transports/__init__.py" \
@@ -155,11 +193,13 @@ fi
 
 PYTHONPATH="$INSTALL_DIR" python3 - \
     "$CONFIG_FILE" "$ENROLLMENT_FILE" "$AMMS_TOKEN" "$AMMS_URL" \
-    "$AMMS_URL_EXPLICIT" "$CONFIG_CREATED" "$ROTATE_KEY" <<'PY'
+    "$AMMS_URL_EXPLICIT" "$CONFIG_CREATED" "$ROTATE_KEY" \
+    "$AMMS_TRANSPORT" "$AMMS_MQTT_HOST" "$AMMS_MQTT_PORT" <<'PY'
 import json
 import os
 import sys
 import tempfile
+import urllib.parse
 
 from amms import generate_credentials
 
@@ -180,11 +220,23 @@ def atomic_json(path, value, mode):
 
 path, enrollment_path, token, url = sys.argv[1:5]
 url_explicit, config_created, rotate_key = (value == "1" for value in sys.argv[5:8])
+transport, mqtt_host, mqtt_port = sys.argv[8:11]
 with open(path, "r", encoding="utf-8") as stream:
     config = json.load(stream)
 amms = config.setdefault("amms", {})
 if config_created or url_explicit or not amms.get("url"):
     amms["url"] = url
+if transport:
+    amms["transport"] = transport
+elif not config_created and "transport" not in amms:
+    # Un aggiornamento non cambia automaticamente il trasporto di una stazione attiva.
+    amms["transport"] = "http"
+if amms.get("transport") == "mqtt":
+    derived_host = urllib.parse.urlsplit(amms["url"]).hostname
+    current_host = "" if config_created and url_explicit else amms.get("mqtt_host")
+    amms["mqtt_host"] = mqtt_host or current_host or derived_host
+    amms["mqtt_port"] = int(mqtt_port)
+    amms.setdefault("mqtt_ca_cert", "/etc/bsg-gateway/mqtt-ca.crt")
 
 generated = None
 if token:
@@ -195,6 +247,7 @@ if token:
         "key_id": "",
         "secret_hex": "",
     })
+    amms["transport"] = "http"
     if os.path.exists(enrollment_path):
         os.unlink(enrollment_path)
 else:
@@ -228,6 +281,41 @@ if [[ -f "$ENROLLMENT_FILE" ]]; then
     chown root:root "$ENROLLMENT_FILE"
     chmod 0600 "$ENROLLMENT_FILE"
 fi
+
+PYTHONPATH="$INSTALL_DIR" python3 - "$CONFIG_FILE" "$AMMS_MQTT_CA_URL" <<'PY'
+import json
+import os
+import ssl
+import sys
+import tempfile
+import urllib.parse
+import urllib.request
+
+config_path, explicit_url = sys.argv[1:]
+with open(config_path, "r", encoding="utf-8") as stream:
+    amms = json.load(stream).get("amms", {})
+if amms.get("transport") != "mqtt":
+    raise SystemExit(0)
+
+ca_path = amms.get("mqtt_ca_cert", "/etc/bsg-gateway/mqtt-ca.crt")
+api = urllib.parse.urlsplit(amms["url"])
+ca_url = explicit_url or urllib.parse.urlunsplit((api.scheme, api.netloc, "/api/mqtt/ca.crt", "", ""))
+with urllib.request.urlopen(ca_url, timeout=20, context=ssl.create_default_context()) as response:
+    pem = response.read()
+if b"-----BEGIN CERTIFICATE-----" not in pem:
+    raise SystemExit("Il server non ha restituito una CA MQTT valida")
+
+descriptor, temporary = tempfile.mkstemp(dir=os.path.dirname(ca_path), prefix="mqtt-ca.")
+try:
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(pem)
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, ca_path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+print("CA MQTT installata da " + ca_url)
+PY
 
 PYTHONPATH="$INSTALL_DIR" python3 - "$CONFIG_FILE" <<'PY'
 import json
@@ -298,7 +386,7 @@ systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
 echo "[6/6] Controllo finale"
-PYTHONPATH="$INSTALL_DIR" python3 -c "import amms, bresser_native; print('AMMSUtils e decoder importati correttamente')"
+PYTHONPATH="$INSTALL_DIR" python3 -c "import amms, bresser_native, mqtt_transport; print('AMMSUtils, MQTT e decoder importati correttamente')"
 
 if ((ENROLLMENT_PENDING == 1)); then
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true

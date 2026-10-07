@@ -98,13 +98,16 @@ def _page(message=""):
 <html lang=\"it\"><head><meta name=\"viewport\" content=\"width=device-width\">
 <title>Bresser Gateway</title>
 <style>body{font-family:sans-serif;max-width:34rem;margin:2rem auto;padding:0 1rem}
-label{display:block;margin-top:1rem}input{width:100%;box-sizing:border-box;padding:.65rem}
+label{display:block;margin-top:1rem}input,select,textarea{width:100%;box-sizing:border-box;padding:.65rem}
 button{margin-top:1.4rem;padding:.7rem 1rem}.message{color:#075}</style></head>
 <body><h1>Bresser Gateway</h1><p>Configura rete e accesso AMMS.</p>
 <p class=\"message\">%s</p>
 <form method=\"post\" action=\"/save\">
 <label>Nome rete Wi-Fi<input name=\"ssid\" required></label>
 <label>Password Wi-Fi<input name=\"password\" type=\"password\"></label>
+<label>Trasporto<select name=\"transport\">
+<option value=\"mqtt\">MQTT/TLS (consigliato)</option><option value=\"http\">HTTPS</option>
+</select></label>
 <label>Modalita' autenticazione<select name=\"auth_mode\">
 <option value=\"hmac-sha256\">HMAC-SHA256</option><option value=\"bearer\">Bearer legacy</option>
 </select></label>
@@ -113,7 +116,34 @@ button{margin-top:1.4rem;padding:.7rem 1rem}.message{color:#075}</style></head>
 <label>Chiave HMAC esadecimale<input name=\"secret_hex\" type=\"password\"></label>
 <label>Token AMMS legacy<input name=\"token\" type=\"password\"></label>
 <label>URL API<input name=\"url\" value=\"https://weather.iacca.ml/api/data/point\" required></label>
+<label>Host MQTT<input name=\"mqtt_host\" value=\"weather.iacca.ml\"></label>
+<label>Porta MQTT/TLS<input name=\"mqtt_port\" value=\"8883\" inputmode=\"numeric\"></label>
+<label>Certificato CA MQTT (PEM)<textarea name=\"mqtt_ca_pem\" rows=\"7\" placeholder=\"-----BEGIN CERTIFICATE-----\"></textarea></label>
 <button type=\"submit\">Salva e riavvia</button></form></body></html>""" % message
+
+
+def _save_mqtt_ca(path, pem):
+    if "-----BEGIN CERTIFICATE-----" not in pem:
+        raise ValueError("certificato CA MQTT non valido")
+    temporary_path = path + ".tmp"
+    with open(temporary_path, "w") as stream:
+        stream.write(pem)
+        if not pem.endswith("\n"):
+            stream.write("\n")
+    import os
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    os.rename(temporary_path, path)
+
+
+def _file_exists(path):
+    try:
+        with open(path, "rb"):
+            return True
+    except OSError:
+        return False
 
 
 def provision(config, ap_name="Bresser Gateway"):
@@ -149,12 +179,21 @@ def provision(config, ap_name="Bresser Gateway"):
                     form = _parse_form(client.read(length))
                     config["wifi"]["ssid"] = form.get("ssid", "")
                     config["wifi"]["password"] = form.get("password", "")
+                    config["amms"]["transport"] = form.get("transport", "mqtt")
                     config["amms"]["auth_mode"] = form.get("auth_mode", "hmac-sha256")
                     config["amms"]["station_id"] = form.get("station_id", "")
                     config["amms"]["key_id"] = form.get("key_id", "")
                     config["amms"]["secret_hex"] = form.get("secret_hex", "")
                     config["amms"]["token"] = form.get("token", "")
                     config["amms"]["url"] = form.get("url", config["amms"]["url"])
+                    config["amms"]["mqtt_host"] = form.get("mqtt_host", "")
+                    config["amms"]["mqtt_port"] = int(form.get("mqtt_port", "8883"))
+                    config["amms"]["mqtt_ca_cert"] = "/mqtt-ca.crt"
+                    mqtt_ca_pem = form.get("mqtt_ca_pem", "").strip()
+                    if config["amms"]["transport"] == "mqtt" and mqtt_ca_pem:
+                        _save_mqtt_ca("/mqtt-ca.crt", mqtt_ca_pem)
+                    elif config["amms"]["transport"] == "mqtt" and not _file_exists("/mqtt-ca.crt"):
+                        raise ValueError("incollare il certificato CA MQTT")
                     save(config)
                     _send_response(client, "200 OK", _page("Configurazione salvata. Riavvio in corso..."))
                     time.sleep(1)

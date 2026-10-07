@@ -1,12 +1,16 @@
 {
   "amms": {
+    "transport": "mqtt",
     "auth_mode": "hmac-sha256",
     "station_id": "",
     "key_id": "",
     "secret_hex": "",
     "token": "",
     "url": "https://weather.iacca.ml/api/data/point",
-    "timeout_seconds": 15
+    "timeout_seconds": 15,
+    "mqtt_host": "weather.iacca.ml",
+    "mqtt_port": 8883,
+    "mqtt_ca_cert": "/etc/bsg-gateway/mqtt-ca.crt"
   },
   "radio": {
     "spi_device": "/dev/spidev0.0",

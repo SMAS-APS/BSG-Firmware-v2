@@ -1,6 +1,6 @@
 # Gateway per Raspberry Pi 3
 
-Questa versione usa Python 3 su Raspberry Pi OS. Legge il ricevitore SX1276/RFM95W tramite SPI, decodifica i messaggi Bresser 5-in-1 e invia i dati ad AMMS tramite HTTPS.
+Questa versione usa Python 3 su Raspberry Pi OS. Legge il ricevitore SX1276/RFM95W tramite SPI, decodifica i messaggi Bresser 5-in-1 e invia i dati ad AMMS tramite MQTT/TLS. Usa QoS 1 e un payload compatto; HTTPS/HMAC resta selezionabile come fallback.
 
 Non usa MicroPython: il Wi-Fi e l'orologio sono gestiti direttamente da Raspberry Pi OS. Il servizio `systemd` parte al boot e, se il processo Python termina per un errore, lo riavvia dopo 5 secondi senza un limite massimo di tentativi.
 
@@ -56,6 +56,17 @@ sudo AMMS_ENROLL_CODE='CODICE_MONOUSO' bash install.sh \
   --enroll-url 'https://weather.iacca.ml/api/stations/enroll'
 ```
 
+L'installer ricava l'host MQTT dall'URL API, scarica il certificato della CA MQTT da
+`/api/mqtt/ca.crt` verificando HTTPS e configura la porta 8883. Se broker e API
+usano nomi differenti, specificare esplicitamente:
+
+```sh
+sudo AMMS_ENROLL_CODE='CODICE_MONOUSO' bash install.sh \
+  --enroll-url 'https://meteo.example/api/stations/enroll' \
+  --url 'https://meteo.example/api/data/point' \
+  --mqtt-host 'mqtt.example'
+```
+
 Senza `--enroll-url`, lo script crea il file protetto
 `/etc/bsg-gateway/enrollment.json` e lascia il servizio fermo. Importare quel file
 nel server, eliminarlo dal Raspberry e avviare il servizio:
@@ -85,13 +96,17 @@ Durante la migrazione e' ancora possibile installare con il vecchio token Bearer
 sudo bash install.sh --token 'TOKEN_AMMS'
 ```
 
+Per forzare il trasporto HTTPS/HMAC su una stazione nuova usare `--http`. Una
+configurazione creata da una versione precedente, priva del campo `transport`,
+continua automaticamente in HTTP dopo l'aggiornamento.
+
 Lo script:
 
-1. installa Python, `spidev`, `gpiozero` e i certificati TLS;
+1. installa Python, `paho-mqtt`, `spidev`, `gpiozero` e i certificati TLS;
 2. abilita SPI;
 3. crea l'utente limitato `bsg-gateway`;
 4. installa l'applicazione in `/opt/bsg-gateway`;
-5. genera e salva le credenziali in `/etc/bsg-gateway/config.json`;
+5. genera e salva le credenziali e la CA MQTT in `/etc/bsg-gateway/`;
 6. abilita e avvia `bsg-gateway.service`.
 
 Se SPI diventa disponibile soltanto dopo il riavvio, l'installer lo segnala. In quel caso basta eseguire:

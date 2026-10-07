@@ -9,7 +9,7 @@ import sys
 import time
 
 import bresser_native
-from amms import AMMSClient, AMMSPayload, HMACAuth
+from amms import AMMSClient, AMMSMQTTClient, AMMSPayload, HMACAuth
 from amms.transports.cpython_http import post_json
 
 
@@ -32,6 +32,14 @@ def load_config(path):
     if not url.startswith("https://"):
         raise ValueError("l'URL AMMS deve iniziare con https://")
     _authentication(amms)
+    transport = amms.get("transport", "http").strip().lower()
+    if transport not in ("http", "mqtt"):
+        raise ValueError("trasporto AMMS non supportato")
+    if transport == "mqtt":
+        if amms.get("auth_mode", "hmac-sha256") != "hmac-sha256":
+            raise ValueError("MQTT richiede credenziali HMAC per stazione")
+        if not amms.get("mqtt_host", "").strip():
+            raise ValueError("host MQTT mancante")
     return config
 
 
@@ -87,20 +95,37 @@ def init_radio(config):
     logging.info("Ricevitore inizializzato: %s", bresser_native.status())
 
 
+def _build_client(amms, mqtt_publisher_class=None):
+    transport = amms.get("transport", "http").strip().lower()
+    if transport == "mqtt":
+        if mqtt_publisher_class is None:
+            from mqtt_transport import RaspberryMQTTPublisher
+            mqtt_publisher_class = RaspberryMQTTPublisher
+        publisher = mqtt_publisher_class(
+            station_id=amms["station_id"],
+            password=amms["secret_hex"],
+            host=amms["mqtt_host"],
+            port=int(amms.get("mqtt_port", 8883)),
+            ca_cert=amms.get("mqtt_ca_cert", "/etc/bsg-gateway/mqtt-ca.crt"),
+        )
+        return AMMSMQTTClient(amms["station_id"], publisher), "MQTT"
+
+    return AMMSClient(
+        amms.get("token", ""),
+        post_json,
+        url=amms["url"],
+        timeout_seconds=int(amms.get("timeout_seconds", 15)),
+        user_agent="BSG-RaspberryPi/2.2",
+        auth=_authentication(amms),
+    ), "HTTP"
+
+
 def run():
     config = load_config(CONFIG_PATH)
     configure_logging(config)
     init_radio(config)
     amms = config["amms"]
-    auth = _authentication(amms)
-    client = AMMSClient(
-        amms.get("token", ""),
-        post_json,
-        url=amms["url"],
-        timeout_seconds=int(amms.get("timeout_seconds", 15)),
-        user_agent="BSG-RaspberryPi/2.0",
-        auth=auth,
-    )
+    client, transport = _build_client(amms)
 
     signal.signal(signal.SIGTERM, _request_stop)
     signal.signal(signal.SIGINT, _request_stop)
@@ -114,7 +139,7 @@ def run():
         int(config.get("runtime", {}).get("stats_interval_seconds", 300)),
     )
     next_stats = time.monotonic() + stats_interval
-    logging.info("Gateway pronto; in attesa di pacchetti Bresser 5-in-1")
+    logging.info("Gateway pronto con trasporto %s; in attesa di pacchetti Bresser 5-in-1", transport)
 
     try:
         while not STOP_REQUESTED:
@@ -123,7 +148,7 @@ def run():
                 logging.info("Ricevuto: %s", reading)
                 result = client.send(payload_from_reading(reading))
                 if result.ok:
-                    logging.info("AMMS HTTP %s: %s", result.http_status, result.body[:300])
+                    logging.info("AMMS %s: %s", transport, result.body[:300])
                 else:
                     logging.warning(
                         "Invio AMMS non riuscito: %s; HTTP=%s; risposta=%s",
@@ -136,6 +161,7 @@ def run():
                 next_stats = time.monotonic() + stats_interval
             time.sleep(poll_seconds)
     finally:
+        client.close()
         logging.info("Statistiche finali: %s", bresser_native.stats())
         bresser_native.deinit()
 

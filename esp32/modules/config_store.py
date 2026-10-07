@@ -9,6 +9,7 @@ DEFAULT_CONFIG = {
         "password": "",
     },
     "amms": {
+        "transport": "mqtt",
         "auth_mode": "hmac-sha256",
         "station_id": "",
         "key_id": "",
@@ -16,6 +17,9 @@ DEFAULT_CONFIG = {
         "token": "",
         "url": "https://weather.iacca.ml/api/data/point",
         "timeout_seconds": 15,
+        "mqtt_host": "weather.iacca.ml",
+        "mqtt_port": 8883,
+        "mqtt_ca_cert": "/mqtt-ca.crt",
     },
     "radio": {
         "spi_host": 3,
@@ -54,6 +58,9 @@ def load(path=CONFIG_PATH):
         if section in config and isinstance(values, dict):
             config[section].update(values)
     stored_amms = stored.get("amms", {})
+    if isinstance(stored_amms, dict) and "transport" not in stored_amms:
+        # Le configurazioni precedenti restano su HTTP dopo l'aggiornamento.
+        config["amms"]["transport"] = "http"
     if (
         isinstance(stored_amms, dict)
         and "auth_mode" not in stored_amms
@@ -80,6 +87,14 @@ def save(config, path=CONFIG_PATH):
         raise
 
 
+def _file_exists(path):
+    try:
+        with open(path, "rb"):
+            return True
+    except OSError:
+        return False
+
+
 def is_provisioned(config):
     amms = config["amms"]
     if amms.get("auth_mode") == "hmac-sha256":
@@ -88,4 +103,11 @@ def is_provisioned(config):
         )
     else:
         authentication_ready = bool(amms.get("token"))
-    return bool(config["wifi"].get("ssid") and authentication_ready)
+    transport_ready = True
+    if amms.get("transport") == "mqtt":
+        transport_ready = (
+            bool(amms.get("mqtt_host"))
+            and amms.get("auth_mode") == "hmac-sha256"
+            and _file_exists(amms.get("mqtt_ca_cert", "/mqtt-ca.crt"))
+        )
+    return bool(config["wifi"].get("ssid") and authentication_ready and transport_ready)

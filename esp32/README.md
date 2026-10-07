@@ -4,7 +4,8 @@ Questa cartella contiene il firmware ESP32 del gateway Bresser con:
 
 - logica applicativa in MicroPython;
 - configurazione Wi-Fi tramite pagina Web locale;
-- invio JSON firmato HMAC-SHA256 al server AMMS tramite HTTPS con verifica del certificato;
+- invio MQTT/TLS con payload JSON compatto e QoS 1;
+- HTTPS firmato HMAC-SHA256 disponibile come fallback;
 - ricevitore RFM95W/SX1276 e decoder Bresser 5-in-1 in C++ nativo;
 - test del decoder eseguibili anche senza scheda ESP32.
 
@@ -41,6 +42,7 @@ esp32/
 |-- modules/
 |   |-- config_store.py
 |   |-- main_app.py
+|   |-- mqtt_transport.py
 |   `-- wifi_manager.py
 |-- native/
 |   |-- micropython.cmake
@@ -55,7 +57,7 @@ esp32/
 `-- BUILDING.md
 ```
 
-Il client AMMS e i trasporti HTTPS sono forniti dal submodule `../external/AMMSUtils` e vengono congelati nel firmware dal manifest.
+Il client AMMS, il codec MQTT e il trasporto HTTPS sono forniti dal submodule `../external/AMMSUtils` e vengono congelati nel firmware dal manifest. `umqtt.simple` viene incluso durante la compilazione.
 
 ## API del modulo nativo
 
@@ -91,10 +93,15 @@ Sono inoltre disponibili:
 
 1. Compilare il firmware seguendo [BUILDING.md](BUILDING.md).
 2. Installarlo sull'ESP32.
-3. Registrare la stazione sul server e ottenere `station_id`, `key_id` e `secret_hex`.
-4. Copiare `config.example.json` sulla scheda come `/config.json` e inserire le credenziali, oppure lasciare che il dispositivo apra la rete `Bresser Gateway`.
-5. Collegarsi alla rete temporanea e aprire `http://192.168.4.1`.
-6. Inserire Wi-Fi, credenziali HMAC e URL API.
+3. Registrare la stazione sul server e ottenere `station_id`, `key_id`, `secret_hex` e i parametri MQTT.
+4. Scaricare `https://HOST-AMMS/api/mqtt/ca.crt` e copiarlo sulla scheda come `/mqtt-ca.crt`; in alternativa incollare il PEM nel portale locale.
+5. Copiare `config.example.json` sulla scheda come `/config.json` e inserire le credenziali, oppure lasciare che il dispositivo apra la rete `Bresser Gateway`.
+6. Collegarsi alla rete temporanea e aprire `http://192.168.4.1`.
+7. Inserire Wi-Fi, credenziali, host MQTT e CA.
+
+Il certificato del broker viene verificato contro la CA configurata e il nome
+host deve corrispondere al certificato. Ogni stazione puo' pubblicare soltanto
+sui propri topic `amms/v1/stations/<station_id>/telemetry` e `status`.
 
 Non inserire token o chiavi reali nei file versionati. Il token Bearer e' ancora
 supportato selezionando `bearer`, esclusivamente per la migrazione di installazioni

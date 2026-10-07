@@ -66,6 +66,37 @@ class GatewayPayloadTests(unittest.TestCase):
                 }
             )
 
+    def test_builds_mqtt_client(self):
+        calls = []
+
+        class Publisher:
+            def __init__(self, **kwargs):
+                calls.append(kwargs)
+
+            def publish(self, *_args, **_kwargs):
+                pass
+
+        amms = {
+            "transport": "mqtt",
+            "auth_mode": "hmac-sha256",
+            "station_id": "bsg-test",
+            "key_id": "key-test",
+            "secret_hex": "01" * 32,
+            "mqtt_host": "broker.example",
+            "mqtt_port": 8883,
+            "mqtt_ca_cert": "/tmp/ca.crt",
+        }
+        client, transport = gateway._build_client(amms, mqtt_publisher_class=Publisher)
+        self.assertEqual(transport, "MQTT")
+        self.assertEqual(client.station_id, "bsg-test")
+        self.assertEqual(calls, [{
+            "station_id": "bsg-test",
+            "password": "01" * 32,
+            "host": "broker.example",
+            "port": 8883,
+            "ca_cert": "/tmp/ca.crt",
+        }])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,9 +3,10 @@ import time
 
 import bresser_native
 
-from amms import AMMSClient, AMMSPayload, HMACAuth
+from amms import AMMSClient, AMMSMQTTClient, AMMSPayload, HMACAuth
 from amms.transports.micropython_http import post_json
 from config_store import is_provisioned, load
+from mqtt_transport import MicroPythonMQTTPublisher
 import wifi_manager
 
 
@@ -50,6 +51,36 @@ def _payload_from_reading(reading):
     return payload
 
 
+def _build_client(amms_config):
+    transport = amms_config.get("transport", "http").lower()
+    if transport == "mqtt":
+        if amms_config.get("auth_mode") != "hmac-sha256":
+            raise ValueError("MQTT richiede credenziali per stazione")
+        publisher = MicroPythonMQTTPublisher(
+            station_id=amms_config["station_id"],
+            password=amms_config["secret_hex"],
+            host=amms_config["mqtt_host"],
+            port=int(amms_config.get("mqtt_port", 8883)),
+            ca_cert=amms_config.get("mqtt_ca_cert", "/mqtt-ca.crt"),
+        )
+        return AMMSMQTTClient(amms_config["station_id"], publisher), "MQTT"
+
+    auth = None
+    auth_mode = amms_config.get("auth_mode", "")
+    if auth_mode == "hmac-sha256":
+        auth = HMACAuth.from_config(amms_config)
+    elif auth_mode != "bearer":
+        raise ValueError("modalita' di autenticazione AMMS non supportata")
+    return AMMSClient(
+        amms_config.get("token", ""),
+        post_json,
+        url=amms_config["url"],
+        timeout_seconds=int(amms_config.get("timeout_seconds", 15)),
+        user_agent="BSG-MicroPython/2.2",
+        auth=auth,
+    ), "HTTP"
+
+
 def run():
     config = load()
     if not is_provisioned(config):
@@ -68,51 +99,42 @@ def run():
     _init_radio(config["radio"])
 
     amms_config = config["amms"]
-    auth = None
-    auth_mode = amms_config.get("auth_mode", "")
-    if auth_mode == "hmac-sha256":
-        auth = HMACAuth.from_config(amms_config)
-    elif auth_mode != "bearer":
-        raise ValueError("modalita' di autenticazione AMMS non supportata")
-    client = AMMSClient(
-        amms_config.get("token", ""),
-        post_json,
-        url=amms_config["url"],
-        timeout_seconds=int(amms_config.get("timeout_seconds", 15)),
-        user_agent="BSG-MicroPython/2.0",
-        auth=auth,
-    )
+    client, transport = _build_client(amms_config)
 
     poll_interval = int(config["runtime"].get("poll_interval_ms", 25))
     reconnect_interval = int(config["runtime"].get("reconnect_interval_seconds", 15))
     last_reconnect_attempt = time.ticks_ms()
 
-    print("Gateway pronto; in attesa di pacchetti Bresser 5-in-1")
-    while True:
-        reading = bresser_native.poll()
-        if reading is not None:
-            print("Ricevuto:", reading)
-            try:
-                wifi_manager.ensure_connected(config, timeout_seconds=reconnect_interval)
-                result = client.send(_payload_from_reading(reading))
-                if result.ok:
-                    print("AMMS:", result.http_status)
-                else:
-                    print("Invio AMMS non riuscito:", result.error, result.body)
-            except Exception as exc:
-                print("Invio AMMS non riuscito:", exc)
-            finally:
-                gc.collect()
-
-        wlan = wifi_manager.station()
-        if not wlan.isconnected():
-            now = time.ticks_ms()
-            if time.ticks_diff(now, last_reconnect_attempt) >= reconnect_interval * 1000:
-                last_reconnect_attempt = now
+    print("Gateway pronto con trasporto %s; in attesa di pacchetti Bresser 5-in-1" % transport)
+    try:
+        while True:
+            reading = bresser_native.poll()
+            if reading is not None:
+                print("Ricevuto:", reading)
                 try:
                     wifi_manager.ensure_connected(config, timeout_seconds=reconnect_interval)
-                    _sync_clock()
-                except OSError as exc:
-                    print("Riconnessione Wi-Fi non riuscita:", exc)
+                    result = client.send(_payload_from_reading(reading))
+                    if result.ok:
+                        print("AMMS %s:" % transport, result.body)
+                    else:
+                        print("Invio AMMS non riuscito:", result.error, result.body)
+                except Exception as exc:
+                    print("Invio AMMS non riuscito:", exc)
+                finally:
+                    gc.collect()
 
-        time.sleep_ms(poll_interval)
+            wlan = wifi_manager.station()
+            if not wlan.isconnected():
+                now = time.ticks_ms()
+                if time.ticks_diff(now, last_reconnect_attempt) >= reconnect_interval * 1000:
+                    last_reconnect_attempt = now
+                    try:
+                        wifi_manager.ensure_connected(config, timeout_seconds=reconnect_interval)
+                        _sync_clock()
+                    except OSError as exc:
+                        print("Riconnessione Wi-Fi non riuscita:", exc)
+
+            time.sleep_ms(poll_interval)
+    finally:
+        client.close()
+        bresser_native.deinit()
