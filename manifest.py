@@ -4,6 +4,9 @@ require("umqtt.simple")
 
 freeze("modules", (
     "bsg_runtime.py",
+    "bresser_protocols.py",
+    "rx_led.py",
+    "ap_uplink.py",
     "config_store.py",
     "main_app.py",
     "mqtt_transport.py",

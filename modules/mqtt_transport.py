@@ -17,6 +17,7 @@ class MicroPythonMQTTPublisher:
         port=8883,
         ca_cert="/mqtt-ca.crt",
         keepalive=45,
+        timeout_seconds=15,
     ):
         self.station_id = station_id
         self.password = password
@@ -24,6 +25,7 @@ class MicroPythonMQTTPublisher:
         self.port = int(port)
         self.ca_cert = ca_cert
         self.keepalive = int(keepalive)
+        self.timeout_seconds = int(timeout_seconds)
         self._status_topic = status_topic(station_id).encode("utf-8")
         self._client = None
         self._connect()
@@ -75,7 +77,7 @@ class MicroPythonMQTTPublisher:
             except Exception:
                 pass
         self._client = self._new_client()
-        self._client.connect()
+        self._client.connect(timeout=self.timeout_seconds)
         self._client.publish(self._status_topic, self._status(True), retain=True, qos=1)
 
     def publish(self, topic, body, qos=1, retain=False):

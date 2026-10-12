@@ -98,6 +98,9 @@ class APPortalTests(unittest.TestCase):
              patch.object(wifi.select, "poll", return_value=poller), \
              patch.object(wifi.time, "ticks_ms", return_value=100, create=True), \
              patch.object(wifi.time, "ticks_diff", side_effect=lambda a, b: a - b, create=True), \
+             patch.object(wifi, "AutoReceiver", return_value=radio), \
+             patch.object(wifi, "ReceiveLED"), \
+             patch.object(wifi, "Uplink", return_value=types.SimpleNamespace(status="disabilitato", amms_status="disabilitato", submit=Mock(), stop=Mock())), \
              patch("builtins.print") as output:
             with self.assertRaises(KeyboardInterrupt):
                 wifi.run_ap({"runtime": {}}, radio)
@@ -115,6 +118,34 @@ class APPortalTests(unittest.TestCase):
         server.close.assert_called_once()
         dns.close.assert_called_once()
         ap.active.assert_called_with(False)
+
+    def test_unrecognized_frame_blinks_led_reports_error_and_keeps_receiving(self):
+        server, dns, client = Mock(), Mock(), Mock()
+        station, ap = Mock(), Mock()
+        server.accept.return_value = (client, ("192.168.4.2", 1))
+        client.recv.return_value = b"GET /api/readings HTTP/1.1\r\n\r\n"
+        client.send.side_effect = lambda data: len(data)
+        poller = Mock()
+        poller.poll.side_effect = [[(server, wifi.select.POLLIN)], [], [(client, wifi.select.POLLIN)], [(client, wifi.select.POLLOUT)]]
+        radio = Mock()
+        radio.poll.side_effect = [dict(error="checksum non valido"),
+                                 dict(protocol="bresser_7in1", model="Bresser 7-in-1", sensor_id=7, temperature=23),
+                                 None, None, KeyboardInterrupt()]
+        led = Mock()
+        uplink = types.SimpleNamespace(status="disabilitato", amms_status="disabilitato", submit=Mock(), stop=Mock())
+        with patch.object(wifi.network, "WLAN", side_effect=[station, ap]), patch.object(wifi.socket, "socket", side_effect=[server, dns]), \
+             patch.object(wifi.select, "poll", return_value=poller), patch.object(wifi.time, "ticks_ms", return_value=100, create=True), \
+             patch.object(wifi.time, "ticks_diff", side_effect=lambda a, b: a - b, create=True), patch.object(wifi, "AutoReceiver", return_value=radio), \
+             patch.object(wifi, "ReceiveLED", return_value=led), patch.object(wifi, "Uplink", return_value=uplink), patch("builtins.print") as output:
+            with self.assertRaises(KeyboardInterrupt):
+                wifi.run_ap({"runtime": {}}, radio)
+        data = json.loads(client.send.call_args.args[0].split(b"\r\n\r\n", 1)[1])
+        self.assertEqual(data["unrecognized"], 1)
+        self.assertEqual(data["received"], 1)
+        self.assertEqual(data["error"], "")
+        self.assertEqual(led.pulse.call_count, 2)
+        self.assertTrue(any(call.args[0] == "ERRORE RF:" for call in output.call_args_list))
+        uplink.submit.assert_called_once()
 
 
 if __name__ == "__main__":

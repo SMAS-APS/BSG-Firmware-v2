@@ -151,7 +151,7 @@ richiamare gli stessi comandi dal terminale o come strumenti esterni.
 | Errore GPIO6-11 riservati | La configurazione contiene pin ESP32-S3: aggiornare la sezione radio di /config.json. |
 | Errore SX1276, ma pagina Web visibile | Controlla radio a 3,3 V, massa, CS, RESET, SPI e DIO0; il portale resta disponibile. |
 | Wi-Fi AP non mostra automaticamente la pagina | Rimani connesso alla rete senza Internet e apri http://192.168.4.1. |
-| Nessun dato meteo | Verifica antenna 868 MHz, cablaggio e sensore Bresser 5-in-1 compatibile; attendi i suoi pacchetti. |
+| Nessun dato meteo | Verifica antenna 868 MHz, cablaggio e sensore Bresser 5/6/7-in-1 compatibile; attendi i suoi pacchetti. |
 
 Puoi verificare la presenza di MicroPython e della libreria con la voce 5,
 oppure `bsg.cmd check --port COM5`. Questa verifica non prova la ricezione RF.
@@ -159,10 +159,23 @@ oppure `bsg.cmd check --port COM5`. Questa verifica non prova la ricezione RF.
 Nel monitor: **Ctrl-C** ferma l'applicazione e apre il REPL; **Ctrl-D** la
 riavvia; **Ctrl-]** esce. Puoi anche premere EN/RESET per riavviare la scheda.
 
-Il protocollo e i parametri radio Bresser restano quelli della libreria
-esistente: FSK a 868,3 MHz e decoder 5-in-1. Altre stazioni a 868 MHz non
-sono automaticamente compatibili. Il pinout proposto e SCK18, MOSI23,
-MISO19, CS27, RESET14 e DIO0 26; confrontalo con lo schema della tua scheda.
+### Aggiornare questa versione con autoriconoscimento
+
+1. Apri `bsg.cmd` e scegli **6** per compilare con ESP-IDF locale.
+2. Scegli **2** per flashare la nuova immagine, conservando configurazione e dati.
+   Serve questo passaggio per aggiungere `poll_raw` nativo; la sola voce 3 non basta
+   se la scheda ha ancora l'immagine precedente.
+3. Scegli **4** e controlla versione 0.1.0, pinout e messaggio di autoriconoscimento.
+4. Collegati a **Bresser Gateway** e apri **http://192.168.4.1**.
+5. Configura Wi-Fi, Wunderground, AMMS e MQTT/TLS nella prima sezione della dashboard.
+   Abilita i servizi desiderati, salva e riconnettiti all'AP dopo il riavvio.
+
+Cablaggio RFM95W-915S2: SCK18, MOSI23, MISO19, NSS27, RESET32,
+DIO0 21, DIO1 33. Ricezione FSK **868,3 MHz**, anche se il nome del modulo
+contiene 915. LED utente Wemos ESP32 mini GPIO2 (polarita configurabile).
+Un errore RF segnala un frame corrotto o non supportato; la ricerca continua.
+La lista dei protocolli e delle varianti supportate e nel [README](README.md).
+Altre stazioni a 868 MHz non sono automaticamente compatibili.
 
 Riferimenti: [mpremote](https://docs.micropython.org/en/latest/reference/mpremote.html)
 e [comandi esptool](https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/basic-commands.html).

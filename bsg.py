@@ -18,6 +18,7 @@ VERIFY_CODE = (
     "getattr(bsg_runtime, 'FIRMWARE_STAGE', 'non indicata')); "
     "print('Libreria Bresser presente; avvio Python aggiornabile OK')"
 )
+DEPLOY_VERIFY_CODE = VERIFY_CODE + "; assert callable(getattr(bresser_native, 'poll_raw', None)), 'Prima ricompilare e flashare BSG: manca API RF 6/7-in-1'"
 
 
 def require(*modules):
@@ -66,6 +67,8 @@ def validate_image(image):
         raise RuntimeError("Immagine non destinata a ESP32-WROOM-32")
     if metadata.get("schema") != 2 or "bresser_native" not in metadata.get("native_modules", []):
         raise RuntimeError("Serve l'immagine MicroPython BSG con libreria Bresser e avvio aggiornabile.")
+    if metadata.get("native_api", 1) < 2:
+        raise RuntimeError("Immagine precedente all'autoriconoscimento 6/7-in-1: ricompilare con build_firmware.py build.")
     if hashlib.sha256(image.read_bytes()).hexdigest() != metadata.get("sha256"):
         raise RuntimeError("L'immagine non corrisponde al suo SHA256: ricompilare o recuperare la coppia .bin/.bin.json originale.")
     return image
@@ -93,7 +96,7 @@ def deploy(port):
     mkdir_code = "import os\nfor path in %r:\n try:\n  os.mkdir(path)\n except OSError as e:\n  if e.args[0] != 17: raise\n" % (
         tuple(sorted(dirs, key=lambda value: (value.count("/"), value))),)
     command = [sys.executable, "-m", "mpremote", "connect", port, "soft-reset",
-               "exec", VERIFY_CODE, "+", "exec", mkdir_code, "+"]
+               "exec", DEPLOY_VERIFY_CODE, "+", "exec", mkdir_code, "+"]
     for local, remote in files:
         # LittleFS sostituisce atomicamente ogni file dopo una copia completa.
         temporary = remote + ".bsg-tmp"

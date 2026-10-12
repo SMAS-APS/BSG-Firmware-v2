@@ -18,8 +18,9 @@ WROOM32_RADIO_CONFIG = {
     "mosi": 23,
     "miso": 19,
     "cs": 27,
-    "reset": 14,
-    "dio0": 26,
+    "reset": 32,
+    "dio0": 21,
+    "dio1": 33,
     "frequency_hz": 868_300_000,
     "frequency_offset_hz": 0,
 }

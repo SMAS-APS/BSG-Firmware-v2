@@ -39,3 +39,10 @@ python bsg.py monitor --port COM5
 `deploy` aggiorna solo i file Python e riavvia la scheda, conservando i dati.
 Il C++ della radio resta incluso nell'interprete. I moduli congelati restano
 come ripiego; il nuovo avvio usa quelli nel filesystem quando presenti.
+
+La nuova API nativa `poll_raw` abilita le estensioni 6/7-in-1 in Python.
+Dopo questo aggiornamento compilare e flashare una volta l'immagine; il
+caricatore rifiuta il solo deploy su immagini prive della nuova API.
+`firmware.bin.json` include `native_api: 2`. Il cablaggio aggiornato e nel
+README: RESET32, DIO0 21 e DIO1 33. Gli strumenti di build impostano UTF-8
+anche su Windows per congelare correttamente i testi del portale.

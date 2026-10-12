@@ -74,6 +74,7 @@ ReceiverResult Sx1276Receiver::begin(const ReceiverConfig& config) {
       !GPIO_IS_VALID_OUTPUT_GPIO(config.cs) ||
       !GPIO_IS_VALID_OUTPUT_GPIO(config.reset) ||
       !GPIO_IS_VALID_GPIO(config.dio0) ||
+      !GPIO_IS_VALID_GPIO(config.dio1) ||
       tuned_frequency < 862000000 || tuned_frequency > 1020000000) {
     return ReceiverResult::kInvalidConfig;
   }
@@ -125,7 +126,7 @@ ReceiverResult Sx1276Receiver::begin(const ReceiverConfig& config) {
   }
 
   gpio_config_t dio_config{};
-  dio_config.pin_bit_mask = 1ULL << config_.dio0;
+  dio_config.pin_bit_mask = (1ULL << config_.dio0) | (1ULL << config_.dio1);
   dio_config.mode = GPIO_MODE_INPUT;
   dio_config.pull_up_en = GPIO_PULLUP_DISABLE;
   dio_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -279,11 +280,11 @@ ReceiverResult Sx1276Receiver::poll(std::uint8_t* payload26, float* rssi_dbm) {
   if (restart_result != ReceiverResult::kOk) return restart_result;
 
   *rssi_dbm = -static_cast<float>(rssi_raw) / 2.0F;
+  std::memcpy(payload26, frame.data() + 1, kRadioFrameSize - 1);
   if (frame[0] != 0xD4) {
     return ReceiverResult::kBadSync;
   }
 
-  std::memcpy(payload26, frame.data() + 1, kRadioFrameSize - 1);
   return ReceiverResult::kOk;
 }
 

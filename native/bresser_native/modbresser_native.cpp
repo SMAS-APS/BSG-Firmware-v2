@@ -101,6 +101,7 @@ mp_obj_t module_init(std::size_t n_args,
     kCs,
     kReset,
     kDio0,
+    kDio1,
     kFrequencyHz,
     kFrequencyOffsetHz,
   };
@@ -112,8 +113,9 @@ mp_obj_t module_init(std::size_t n_args,
       {MP_QSTR_mosi, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 23}},
       {MP_QSTR_miso, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 19}},
       {MP_QSTR_cs, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 27}},
-      {MP_QSTR_reset, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 14}},
-      {MP_QSTR_dio0, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 26}},
+      {MP_QSTR_reset, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 32}},
+      {MP_QSTR_dio0, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 21}},
+      {MP_QSTR_dio1, MP_ARG_INT | MP_ARG_KW_ONLY, {.u_int = 33}},
       {MP_QSTR_frequency_hz,
        MP_ARG_INT | MP_ARG_KW_ONLY,
        {.u_int = 868300000}},
@@ -138,6 +140,7 @@ mp_obj_t module_init(std::size_t n_args,
   config.cs = arguments[kCs].u_int;
   config.reset = arguments[kReset].u_int;
   config.dio0 = arguments[kDio0].u_int;
+  config.dio1 = arguments[kDio1].u_int;
   config.frequency_hz = arguments[kFrequencyHz].u_int;
   config.frequency_offset_hz = arguments[kFrequencyOffsetHz].u_int;
 
@@ -182,6 +185,29 @@ mp_obj_t module_poll() {
 }
 MP_DEFINE_CONST_FUN_OBJ_0(module_poll_obj, module_poll);
 
+// Raw frames allow additional decoders in MicroPython without changing the
+// established 5-in-1 decode()/poll() API or performing Python in an ISR.
+mp_obj_t module_poll_raw() {
+  std::uint8_t payload[bresser::kPayloadSize5In1]{};
+  float rssi = 0.0F;
+  const auto result = receiver.poll(payload, &rssi);
+  if (result == bresser::ReceiverResult::kNoPacket) return mp_const_none;
+  if (result != bresser::ReceiverResult::kOk &&
+      result != bresser::ReceiverResult::kBadSync) {
+    ++module_stats.radio_errors;
+    raise_receiver_error("SX1276 poll failed", result);
+  }
+  ++module_stats.packets_seen;
+  if (result == bresser::ReceiverResult::kBadSync) ++module_stats.sync_errors;
+  mp_obj_t event = mp_obj_new_dict(3);
+  dict_store(event, MP_QSTR_raw, mp_obj_new_bytes(payload, sizeof(payload)));
+  dict_store(event, MP_QSTR_rssi, mp_obj_new_float(rssi));
+  dict_store(event, MP_QSTR_sync_ok,
+             mp_obj_new_bool(result == bresser::ReceiverResult::kOk));
+  return event;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(module_poll_raw_obj, module_poll_raw);
+
 mp_obj_t module_decode(mp_obj_t payload_object) {
   mp_buffer_info_t payload{};
   mp_get_buffer_raise(payload_object, &payload, MP_BUFFER_READ);
@@ -216,6 +242,7 @@ mp_obj_t module_status() {
   dict_store(result, MP_QSTR_cs, mp_obj_new_int(config.cs));
   dict_store(result, MP_QSTR_reset, mp_obj_new_int(config.reset));
   dict_store(result, MP_QSTR_dio0, mp_obj_new_int(config.dio0));
+  dict_store(result, MP_QSTR_dio1, mp_obj_new_int(config.dio1));
   dict_store(result, MP_QSTR_frequency_hz,
              mp_obj_new_int_from_uint(config.frequency_hz));
   dict_store(result, MP_QSTR_frequency_offset_hz,
@@ -276,6 +303,7 @@ const mp_rom_map_elem_t module_globals_table[] = {
     {MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_bresser_native)},
     {MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&module_init_obj)},
     {MP_ROM_QSTR(MP_QSTR_poll), MP_ROM_PTR(&module_poll_obj)},
+    {MP_ROM_QSTR(MP_QSTR_poll_raw), MP_ROM_PTR(&module_poll_raw_obj)},
     {MP_ROM_QSTR(MP_QSTR_decode), MP_ROM_PTR(&module_decode_obj)},
     {MP_ROM_QSTR(MP_QSTR_status), MP_ROM_PTR(&module_status_obj)},
     {MP_ROM_QSTR(MP_QSTR_stats), MP_ROM_PTR(&module_stats_obj)},

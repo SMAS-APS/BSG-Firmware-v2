@@ -30,6 +30,15 @@ def reading(rain, sensor_id=1, sensor_type=1, startup=False):
 
 
 class RainTrackerTests(unittest.TestCase):
+    def test_6_and_7in1_counter_rollover_uses_six_bcd_digits(self):
+        for protocol in ("bresser_6in1", "bresser_7in1"):
+            with tempfile.TemporaryDirectory() as directory:
+                tracker = self.make_tracker(directory)
+                start = epoch(2026, 1, 1, 12)
+                tracker.update(dict(reading(99999.8), protocol=protocol), start)
+                tracker.update(dict(reading(0.2), protocol=protocol), start + 12)
+                self.assertAlmostEqual(tracker._state["normalized_mm"], 0.4)
+
     def make_tracker(self, directory, offset=60):
         return RainTracker(
             offset,
@@ -92,7 +101,17 @@ class RainTrackerTests(unittest.TestCase):
             hourly, _ = tracker.update(
                 reading(100.0, sensor_id=2), start + 3624
             )
-            self.assertEqual(hourly, 0)
+            self.assertIsNone(hourly)
+
+    def test_sensor_replacement_cannot_retain_previous_stations_rain_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tracker = self.make_tracker(directory)
+            start = epoch(2026, 1, 1, 12)
+            tracker.update(reading(20), start)
+            tracker.update(reading(22), start + 12)
+            tracker.update(reading(50, sensor_id=2), start + 24)
+            self.assertEqual(tracker._state["events"], [])
+            self.assertEqual(tracker._state["normalized_mm"], 0)
 
     def test_persisted_state_survives_restart(self):
         with tempfile.TemporaryDirectory() as directory:

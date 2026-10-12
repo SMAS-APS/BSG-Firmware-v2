@@ -16,7 +16,9 @@ def canonical_sensor_values(reading):
     """Converte una lettura Bresser nelle unita' canoniche AMMS."""
 
     sensors = {}
-    for name in ("temperature", "humidity", "wind_direction", "precipitation"):
+    for name in ("temperature", "humidity", "wind_direction", "precipitation",
+                 "uv_index", "light_lux", "globe_temperature", "soil_moisture",
+                 "pm1", "pm2_5", "pm10", "co2_ppm", "hcho_ppb", "voc_level"):
         value = reading.get(name)
         if value is not None:
             sensors[name] = value
@@ -32,7 +34,9 @@ def _day_key(epoch, utc_offset_minutes):
     return "%04d-%02d-%02d" % (parts[0], parts[1], parts[2])
 
 
-def _counter_modulus(sensor_type):
+def _counter_modulus(sensor_type, protocol=None):
+    if protocol in ("bresser_6in1", "bresser_7in1"):
+        return 100000.0
     if sensor_type is not None and 0x39 <= int(sensor_type) <= 0x3B:
         return 2500.0
     return 1000.0
@@ -105,6 +109,8 @@ class RainTracker:
             "version": STATE_VERSION,
             "sensor_id": reading.get("sensor_id"),
             "sensor_type": reading.get("sensor_type"),
+            "protocol": reading.get("protocol"),
+            "channel": reading.get("channel"),
             "last_raw_mm": counter,
             "normalized_mm": 0.0,
             "last_timestamp": timestamp,
@@ -118,13 +124,13 @@ class RainTracker:
         self._dirty = True
         self.flush(timestamp, force=True)
 
-    def _delta(self, counter, sensor_type, reset_signal):
+    def _delta(self, counter, sensor_type, reset_signal, protocol=None):
         previous = self._state["last_raw_mm"]
         if reset_signal:
             return 0.0
         if counter >= previous:
             return counter - previous
-        modulus = _counter_modulus(sensor_type)
+        modulus = _counter_modulus(sensor_type, protocol)
         if previous >= modulus * 0.9 and counter <= modulus * 0.1:
             return modulus - previous + counter
         return 0.0
@@ -153,7 +159,12 @@ class RainTracker:
         sensor_id = reading.get("sensor_id")
         sensor_type = reading.get("sensor_type")
         startup = bool(reading.get("startup"))
-        sensor_changed = sensor_id != state["sensor_id"]
+        sensor_changed = (sensor_id != state["sensor_id"] or
+                          reading.get("protocol") != state.get("protocol") or
+                          reading.get("channel") != state.get("channel"))
+        if sensor_changed:
+            self._initialise(reading, counter, timestamp)
+            return self.values(timestamp)
         reset_signal = sensor_changed or (startup and not self._startup_active)
         self._startup_active = startup
 
@@ -164,7 +175,7 @@ class RainTracker:
         day_changed = current_day != old_day
 
         previous_counter = state["last_raw_mm"]
-        delta = self._delta(counter, sensor_type, reset_signal)
+        delta = self._delta(counter, sensor_type, reset_signal, reading.get("protocol"))
         counter_reset = counter < previous_counter and delta == 0.0
         if day_changed and gap > MAX_GAP_SECONDS:
             # Non e' possibile stabilire su quale lato della mezzanotte sia
@@ -190,6 +201,8 @@ class RainTracker:
 
         state["sensor_id"] = sensor_id
         state["sensor_type"] = sensor_type
+        state["protocol"] = reading.get("protocol")
+        state["channel"] = reading.get("channel")
         state["last_raw_mm"] = counter
         state["last_timestamp"] = timestamp
         self._dirty = (

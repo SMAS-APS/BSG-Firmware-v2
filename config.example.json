@@ -14,7 +14,10 @@
     "timeout_seconds": 15,
     "mqtt_host": "weather.iacca.ml",
     "mqtt_port": 8883,
-    "mqtt_ca_cert": "/mqtt-ca.crt"
+    "mqtt_ca_cert": "/mqtt-ca.crt",
+    "enabled": false,
+    "upload_interval_seconds": 10,
+    "mqtt_keepalive": 45
   },
   "radio": {
     "spi_host": 1,
@@ -22,10 +25,11 @@
     "mosi": 23,
     "miso": 19,
     "cs": 27,
-    "reset": 14,
-    "dio0": 26,
+    "reset": 32,
+    "dio0": 21,
     "frequency_hz": 868300000,
-    "frequency_offset_hz": 0
+    "frequency_offset_hz": 0,
+    "dio1": 33
   },
   "weather_underground": {
     "enabled": false,
@@ -39,6 +43,9 @@
     "mode": "ap",
     "ap_ssid": "Bresser Gateway",
     "poll_interval_ms": 25,
-    "reconnect_interval_seconds": 15
+    "reconnect_interval_seconds": 15,
+    "led_pin": 2,
+    "led_active_low": false,
+    "led_pulse_ms": 100
   }
 }

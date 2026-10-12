@@ -83,6 +83,8 @@ def idf_environment(idf_path=None):
         raise RuntimeError("ESP-IDF mancante: installare v5.5.2, aprire ESP-IDF Terminal oppure impostare BSG_IDF_PATH. Vedere README.md.")
     sdk = Path(selected).resolve()
     env = os.environ.copy()
+    # I manifest congelati contengono testo UTF-8, anche su Windows cp1252.
+    env["PYTHONUTF8"] = "1"
     env["IDF_PATH"] = str(sdk)
     result = run([sys.executable, sdk / "tools/idf_tools.py", "export", "--format", "key-value"],
                  env=env, text=True, stdout=subprocess.PIPE)
@@ -128,6 +130,7 @@ def build(sdk, python, env):
     metadata = {"schema": 2, "chip": "esp32", "board": "ESP32-WROOM-32",
                 "firmware_version": runpy.run_path(str(PROJECT / "modules/bsg_runtime.py"))["FIRMWARE_VERSION"],
                 "micropython": VERSION, "native_modules": ["bresser_native"],
+                "native_api": 2,
                 "flash_offset": 4096,
                 "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}
     image.with_suffix(".bin.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")

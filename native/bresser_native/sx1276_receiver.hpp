@@ -15,8 +15,9 @@ struct ReceiverConfig {
   int mosi = 23;
   int miso = 19;
   int cs = 27;
-  int reset = 14;
-  int dio0 = 26;
+  int reset = 32;
+  int dio0 = 21;
+  int dio1 = 33;
   std::uint32_t frequency_hz = 868300000;
   std::int32_t frequency_offset_hz = 0;
 };

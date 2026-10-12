@@ -22,12 +22,18 @@ class BoardToolsTests(unittest.TestCase):
              patch("builtins.print"):
             exec(board.VERIFY_CODE, {})
 
+    def test_deploy_rejects_missing_multi_protocol_native_api_before_copying(self):
+        runtime = types.SimpleNamespace(FIRMWARE_SCHEMA=2)
+        with patch.dict("sys.modules", {"bresser_native": types.SimpleNamespace(), "bsg_runtime": runtime}), patch("builtins.print"):
+            with self.assertRaisesRegex(AssertionError, "flashare"):
+                exec(board.DEPLOY_VERIFY_CODE, {})
+
     def image(self, folder):
         image = pathlib.Path(folder) / "firmware.bin"
         image.write_bytes(b"test-bsg-image")
         image.with_suffix(".bin.json").write_text(json.dumps({
             "schema": 2, "chip": "esp32", "flash_offset": 4096,
-            "native_modules": ["bresser_native"],
+            "native_modules": ["bresser_native"], "native_api": 2,
             "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
         }))
         return image
@@ -73,7 +79,7 @@ class BoardToolsTests(unittest.TestCase):
              patch.object(board, "run") as run:
             board.deploy("COM5")
         command = run.call_args.args[0]
-        self.assertLess(command.index(board.VERIFY_CODE), command.index("fs"))
+        self.assertLess(command.index(board.DEPLOY_VERIFY_CODE), command.index("fs"))
         self.assertNotIn(":/config.json", command)
         self.assertIn(":/main.py.bsg-tmp", command)
         self.assertIn("import os; os.rename('/main.py.bsg-tmp', '/main.py')", command)

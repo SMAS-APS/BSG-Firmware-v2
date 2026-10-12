@@ -7,6 +7,8 @@ from config_store import is_provisioned, load, validate_weather_underground
 from bsg_runtime import FIRMWARE_BOARD, FIRMWARE_VERSION, FIRMWARE_STAGE
 import wifi_manager
 from wu_support import canonical_sensor_values
+from bresser_protocols import AutoReceiver
+from rx_led import ReceiveLED
 
 
 def _sync_clock():
@@ -29,8 +31,8 @@ def _clock_is_valid():
 
 def _init_radio(radio):
     if FIRMWARE_BOARD == "ESP32-WROOM-32":
-        for name in ("sck", "mosi", "miso", "cs", "reset", "dio0"):
-            if 6 <= int(radio[name]) <= 11:
+        for name in ("sck", "mosi", "miso", "cs", "reset", "dio0", "dio1"):
+            if 6 <= int(radio.get(name, 33)) <= 11:
                 raise ValueError("GPIO6-11 riservati alla flash WROOM-32: aggiornare radio in /config.json")
     bresser_native.init(
         spi_host=int(radio["spi_host"]),
@@ -40,6 +42,7 @@ def _init_radio(radio):
         cs=int(radio["cs"]),
         reset=int(radio["reset"]),
         dio0=int(radio["dio0"]),
+        dio1=int(radio.get("dio1", 33)),
         frequency_hz=int(radio["frequency_hz"]),
         frequency_offset_hz=int(radio.get("frequency_offset_hz", 0)),
     )
@@ -68,6 +71,8 @@ def _build_client(amms_config):
             host=amms_config["mqtt_host"],
             port=int(amms_config.get("mqtt_port", 8883)),
             ca_cert=amms_config.get("mqtt_ca_cert", "/mqtt-ca.crt"),
+            keepalive=int(amms_config.get("mqtt_keepalive", 45)),
+            timeout_seconds=int(amms_config.get("timeout_seconds", 15)),
         )
         return AMMSMQTTClient(amms_config["station_id"], publisher), "MQTT"
 
@@ -82,7 +87,7 @@ def _build_client(amms_config):
         post_json,
         url=amms_config["url"],
         timeout_seconds=int(amms_config.get("timeout_seconds", 15)),
-        user_agent="BSG-MicroPython/2.4",
+        user_agent="BSG-MicroPython/" + FIRMWARE_VERSION,
         auth=auth,
     ), "HTTP"
 
@@ -107,7 +112,7 @@ def _build_weather_underground(config):
         mode=wu_config.get("mode", "rapidfire"),
         upload_interval_seconds=int(wu_config.get("upload_interval_seconds", 10)),
         timeout_seconds=5,
-        user_agent="BSG-MicroPython/2.4",
+        user_agent="BSG-MicroPython/" + FIRMWARE_VERSION,
     )
     tracker = RainTracker(int(wu_config.get("utc_offset_minutes", 60)))
     return client, tracker
@@ -143,6 +148,9 @@ def run():
     clock_valid = _sync_clock() or _clock_is_valid()
     _init_radio(config["radio"])
 
+    receiver = AutoReceiver(bresser_native)
+    led = ReceiveLED(config["runtime"])
+
     amms_config = config["amms"]
     client, transport = _build_client(amms_config)
     try:
@@ -157,10 +165,17 @@ def run():
     last_clock_attempt = time.ticks_ms()
     last_wu_upload = None
 
-    print("Gateway pronto con trasporto %s; in attesa di pacchetti Bresser 5-in-1" % transport)
+    print("Gateway pronto con trasporto %s; autoriconoscimento Bresser 5/6/7-in-1 e varianti" % transport)
     try:
         while True:
-            reading = bresser_native.poll()
+            led.tick(time.ticks_ms())
+            reading = receiver.poll()
+            if reading is not None:
+                led.pulse(time.ticks_ms())
+                if reading.get("error"):
+                    print("ERRORE RF:", reading)
+                    time.sleep_ms(poll_interval)
+                    continue
             if reading is not None:
                 print("Ricevuto:", reading)
                 payload = _payload_from_reading(reading)
@@ -240,4 +255,5 @@ def run():
             time.sleep_ms(poll_interval)
     finally:
         client.close()
+        led.off()
         bresser_native.deinit()

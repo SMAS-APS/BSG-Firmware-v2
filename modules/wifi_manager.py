@@ -5,9 +5,12 @@ import select
 
 import network
 
-from config_store import save, validate_weather_underground, replace_file
+from config_store import save, validate_weather_underground, validate_amms, replace_file
 from wu_support import canonical_sensor_values
 from bsg_runtime import FIRMWARE_VERSION, FIRMWARE_STAGE
+from bresser_protocols import AutoReceiver
+from rx_led import ReceiveLED
+from ap_uplink import Uplink
 
 
 def _interface_id(name, fallback):
@@ -259,15 +262,160 @@ def _dns_reply(packet):
     return header + question + (answer if ipv4 else b"")
 
 
-def _dashboard():
+def _escape(value):
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
+
+
+def _configuration_form(config):
+    config = config or {}
+    wifi = config.get("wifi", {})
+    wu = config.get("weather_underground", {})
+    return """<article><h2>Configurazione Wi-Fi e Weather Underground</h2>
+<form id="configuration" method="post" action="/save">
+<label>Nome rete Wi-Fi (SSID)<input name="ssid" maxlength="32" value="%s" autocomplete="off"></label>
+<label>Password Wi-Fi<input name="password" type="password" maxlength="64" placeholder="Vuoto: conserva la password della stessa rete" autocomplete="new-password"></label>
+<label><input type="checkbox" name="clear_wifi_password"> Rete Wi-Fi senza password</label>
+<h3>Weather Underground</h3>
+<label><input type="checkbox" name="wu_enabled" %s> Abilita invio dati</label>
+<label>Station ID WU<input name="wu_station_id" maxlength="64" value="%s"></label>
+<label>Station Key WU<input name="wu_station_key" type="password" maxlength="128" placeholder="Vuoto: conserva la chiave salvata" autocomplete="new-password"></label>
+<label>Modalità<select name="wu_mode"><option value="rapidfire" %s>RapidFire</option><option value="standard" %s>PWS standard</option></select></label>
+<label>Intervallo invio (secondi, minimo 10)<input name="wu_interval" type="number" min="10" max="86400" value="%s"></label>
+<label>Offset UTC per pioggia giornaliera (minuti)<input name="wu_utc_offset" type="number" min="-720" max="840" value="%s"></label>
+%s
+<button type="submit">Salva e riavvia</button><p id="save_status" role="status"></p>
+</form><small>L'AP rimane disponibile mentre la scheda si collega al router.
+Password e Station Key già salvate non vengono mostrate. WU usa la prima stazione meteo rilevata dopo l'avvio.</small></article>""" % (
+        _escape(wifi.get("ssid", "")), "checked" if wu.get("enabled") else "",
+        _escape(wu.get("station_id", "")),
+        "selected" if wu.get("mode", "rapidfire") == "rapidfire" else "",
+        "selected" if wu.get("mode") == "standard" else "",
+        _escape(wu.get("upload_interval_seconds", 10)), _escape(wu.get("utc_offset_minutes", 60)),
+        _amms_form(config.get("amms", {})))
+
+
+def _amms_form(amms):
+    def value(name, default=""):
+        return _escape(amms.get(name, default))
+
+    return """<h3>AMMS e MQTT/TLS</h3>
+<label><input type="checkbox" name="amms_enabled" %s> Abilita invio ad AMMS</label>
+<label>Trasporto<select name="transport"><option value="http" %s>HTTPS AMMS</option><option value="mqtt" %s>MQTT/TLS AMMS</option></select></label>
+<label>Autenticazione<select name="auth_mode"><option value="hmac-sha256" %s>HMAC-SHA256</option><option value="bearer" %s>Bearer legacy (solo HTTPS)</option></select></label>
+<label>ID stazione AMMS / utente MQTT<input name="station_id" maxlength="64" value="%s"></label>
+<label>ID chiave HMAC<input name="key_id" maxlength="64" value="%s"></label>
+<label>Chiave HMAC / password MQTT (64 cifre esadecimali)<input type="password" name="secret_hex" maxlength="64" autocomplete="new-password" placeholder="Vuoto: conserva la chiave salvata"></label>
+<label>Token AMMS legacy<input type="password" name="token" maxlength="512" autocomplete="new-password" placeholder="Vuoto: conserva il token salvato"></label>
+<label>URL API AMMS<input name="url" type="url" maxlength="256" value="%s"></label>
+<label>Timeout AMMS (secondi)<input name="timeout_seconds" type="number" min="1" max="60" value="%s"></label>
+<label>Intervallo AMMS (secondi)<input name="amms_interval" type="number" min="1" max="86400" value="%s"></label>
+<label>Host MQTT<input name="mqtt_host" maxlength="253" value="%s"></label>
+<label>Porta MQTT/TLS<input name="mqtt_port" type="number" min="1" max="65535" value="%s"></label>
+<label>Keepalive MQTT (secondi)<input name="mqtt_keepalive" type="number" min="10" max="3600" value="%s"></label>
+<label>Percorso CA MQTT salvato<input name="mqtt_ca_cert" maxlength="96" value="%s"></label>
+<label>Certificato CA MQTT (PEM)<textarea name="mqtt_ca_pem" rows="7" maxlength="4096" placeholder="Vuoto: conserva il certificato esistente"></textarea></label>
+<small>MQTT mantiene i topic e il formato AMMS originali; richiede autenticazione per stazione e CA valida.
+HTTPS e MQTT sono due trasporti alternativi di AMMS. Wunderground può essere attivo contemporaneamente.</small>""" % (
+        "checked" if amms.get("enabled") else "",
+        "selected" if amms.get("transport") == "http" else "",
+        "selected" if amms.get("transport", "mqtt") == "mqtt" else "",
+        "selected" if amms.get("auth_mode", "hmac-sha256") == "hmac-sha256" else "",
+        "selected" if amms.get("auth_mode") == "bearer" else "",
+        value("station_id"), value("key_id"), value("url", "https://weather.iacca.ml/api/data/point"),
+        value("timeout_seconds", 15), value("upload_interval_seconds", 10),
+        value("mqtt_host", "weather.iacca.ml"), value("mqtt_port", 8883), value("mqtt_keepalive", 45), value("mqtt_ca_cert", "/mqtt-ca.crt"))
+
+
+def _save_ap_configuration(config, form):
+    candidate = {key: value.copy() for key, value in config.items()}
+    wifi = candidate["wifi"]
+    ssid = form.get("ssid", "").strip()
+    password = form.get("password", "")
+    if len(ssid.encode("utf-8")) > 32 or len(password.encode("utf-8")) > 64:
+        raise ValueError("SSID o password Wi-Fi troppo lunghi")
+    if ssid != wifi.get("ssid") or password or form.get("clear_wifi_password") == "on":
+        wifi["password"] = "" if form.get("clear_wifi_password") == "on" else password
+    wifi["ssid"] = ssid
+    wu = candidate["weather_underground"]
+    wu["enabled"] = form.get("wu_enabled") == "on"
+    wu["station_id"] = form.get("wu_station_id", "").strip()
+    if form.get("wu_station_key"):
+        wu["station_key"] = form["wu_station_key"]
+    wu["mode"] = form.get("wu_mode", "rapidfire")
+    wu["upload_interval_seconds"] = int(form.get("wu_interval", "10"))
+    wu["utc_offset_minutes"] = int(form.get("wu_utc_offset", "60"))
+    if len(wu["station_id"]) > 64 or len(wu["station_key"]) > 128:
+        raise ValueError("credenziali WU troppo lunghe")
+    if wu["enabled"] and not ssid:
+        raise ValueError("per Weather Underground serve una rete Wi-Fi")
+    validate_weather_underground(candidate)
+    amms = candidate["amms"]
+    amms["enabled"] = form.get("amms_enabled") == "on"
+    for key in ("transport", "auth_mode", "station_id", "key_id", "url", "mqtt_host", "mqtt_ca_cert"):
+        if key in form:
+            amms[key] = form[key].strip()
+    for key in ("secret_hex", "token"):
+        if form.get(key):
+            amms[key] = form[key].strip()
+    amms["mqtt_port"] = int(form.get("mqtt_port", str(amms.get("mqtt_port", 8883))))
+    amms["mqtt_keepalive"] = int(form.get("mqtt_keepalive", str(amms.get("mqtt_keepalive", 45))))
+    amms["timeout_seconds"] = int(form.get("timeout_seconds", str(amms.get("timeout_seconds", 15))))
+    amms["upload_interval_seconds"] = int(form.get("amms_interval", str(amms.get("upload_interval_seconds", 10))))
+    cert_path = amms.get("mqtt_ca_cert", "/mqtt-ca.crt")
+    if not cert_path.startswith("/") or ".." in cert_path or not cert_path.endswith(".crt") or len(cert_path) > 96:
+        raise ValueError("percorso certificato CA non valido")
+    pem = form.get("mqtt_ca_pem", "").strip()
+    if pem:
+        if len(pem) > 4096 or "-----BEGIN CERTIFICATE-----" not in pem or "-----END CERTIFICATE-----" not in pem:
+            raise ValueError("certificato CA non valido")
+        # Mantiene intatta la vecchia CA se il successivo salvataggio fallisce.
+        import hashlib
+        import binascii
+        suffix = binascii.hexlify(hashlib.sha256(pem.encode()).digest()).decode()[:16]
+        cert_path = "/mqtt-ca-" + suffix + ".crt"
+        amms["mqtt_ca_cert"] = cert_path
+    validate_amms(candidate, certificate_available=bool(pem) or _file_exists(cert_path))
+    if pem:
+        _save_mqtt_ca(cert_path, pem)
+    candidate["runtime"]["mode"] = "ap"
+    save(candidate)
+    config.update(candidate)
+
+
+def _request_complete(request):
+    if b"\r\n\r\n" not in request:
+        return False
+    headers, body = bytes(request).split(b"\r\n\r\n", 1)
+    length = 0
+    seen_length = False
+    for line in headers.split(b"\r\n")[1:]:
+        if b":" not in line:
+            raise ValueError("header HTTP non valido")
+        key, value = line.split(b":", 1)
+        if key.lower() == b"transfer-encoding":
+            raise ValueError("transfer encoding non supportato")
+        if key.lower() == b"content-length":
+            if seen_length:
+                raise ValueError("content length duplicato")
+            seen_length = True
+            length = int(value.strip())
+    if length < 0 or length > 7168:
+        raise ValueError("corpo HTTP troppo grande")
+    return len(body) >= length
+
+
+def _dashboard(config=None):
     return """<!doctype html><html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Bresser Gateway</title><style>
 body{font-family:system-ui,sans-serif;background:#edf2f6;color:#172b3a;max-width:900px;margin:auto;padding:24px}
 h1{margin-bottom:4px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 article{background:white;border-radius:12px;padding:20px}strong{display:block;font-size:28px;margin-top:10px}
-#status{padding:16px;background:white;border-radius:12px}small{color:#526777}</style></head>
+#status{padding:16px;background:white;border-radius:12px}small{color:#526777}
+label{display:block;margin:12px 0}input:not([type=checkbox]),select,textarea{width:100%;box-sizing:border-box;padding:10px}
+button{padding:12px;background:#145c83;color:white;border:0;border-radius:6px}h2{font-size:21px}pre{white-space:pre-wrap}</style></head>
 <body><h1>Bresser Gateway</h1><p>Dati locali della stazione · Access Point</p>
+CONFIGURATION_FORM
 <p id="status">In attesa del ricevitore...</p><div class="grid">
 <article>Temperatura<strong id="temperature">—</strong><small>°C</small></article>
 <article>Umidità<strong id="humidity">—</strong><small>%</small></article>
@@ -275,27 +423,46 @@ article{background:white;border-radius:12px;padding:20px}strong{display:block;fo
 <article>Raffica<strong id="wind_gust">—</strong><small>km/h</small></article>
 <article>Direzione<strong id="wind_direction">—</strong><small>gradi</small></article>
 <article>Pioggia cumulativa<strong id="precipitation">—</strong><small>mm · contatore sensore</small></article>
-</div><p id="details"></p><small>Indirizzo locale: http://192.168.4.1 · Serial Monitor: 115200 baud</small>
+<article>Indice UV<strong id="uv_index">—</strong></article>
+<article>Luminosità<strong id="light_lux">—</strong><small>lux</small></article>
+</div><p id="details"></p><p id="uplink"></p><pre id="variants"></pre><small>Indirizzo locale: http://192.168.4.1 · Serial Monitor: 115200 baud</small>
 <script>
+document.getElementById('configuration').onsubmit=async function(e){e.preventDefault();const p=document.getElementById('save_status');
+try{const r=await fetch('/save',{method:'POST',body:new URLSearchParams(new FormData(this))});const d=await r.json();p.textContent=d.message;
+if(r.ok)setTimeout(()=>location.reload(),7000);}catch(e){p.textContent='Salvataggio non confermato. Riconnettersi all’AP e riprovare.';}};
 async function refresh(){try{
 const r=await fetch('/api/readings',{cache:'no-store'});if(!r.ok)throw Error('HTTP');const d=await r.json();
-for(const k of ['temperature','humidity','wind_speed','wind_gust','wind_direction','precipitation']){
+for(const k of ['temperature','humidity','wind_speed','wind_gust','wind_direction','precipitation','uv_index','light_lux']){
 const v=d.sensors[k];document.getElementById(k).textContent=v==null?'—':Number(v).toLocaleString('it-IT',{maximumFractionDigits:1});}
-document.getElementById('status').textContent=d.error?'Errore radio: '+d.error:d.age_seconds==null?'In attesa di un pacchetto Bresser 5-in-1':
+document.getElementById('status').textContent=d.error?'Errore ricezione: '+d.error:d.age_seconds==null?'Ricerca automatica Bresser 5-in-1 / 6-in-1 / 7-in-1 e varianti':
 'Ultima ricezione: '+d.age_seconds+' s fa'+(d.age_seconds>120?' · Dati non aggiornati':'');
 document.getElementById('details').textContent='Firmware '+d.firmware_version+' · '+d.firmware_stage+' · Pacchetti validi: '+d.received+(d.sensor_id==null?'':' · Sensore: '+d.sensor_id)+
-(d.rssi==null?'':' · RSSI: '+d.rssi+' dBm')+(d.battery_ok==null?'':d.battery_ok?' · Batteria OK':' · Batteria scarica');
+(d.rssi==null?'':' · RSSI: '+d.rssi+' dBm')+(d.battery_ok==null?'':d.battery_ok?' · Batteria OK':' · Batteria scarica')+' · '+(d.model||'')+' · Errori: '+d.unrecognized;
+document.getElementById('uplink').textContent='Wi-Fi: '+d.wifi_status+' · Wunderground: '+d.wu_status+' · AMMS: '+d.amms_status;
+document.getElementById('variants').textContent=JSON.stringify(d.sensors,null,2);
 }catch(e){document.getElementById('status').textContent='Connessione al gateway interrotta';}finally{setTimeout(refresh,2000);}}
-refresh();</script></body></html>"""
+refresh();</script></body></html>""".replace("CONFIGURATION_FORM", _configuration_form(config))
 
 
-def _ap_response(request, state):
+def _ap_response(request, state, config=None):
     line = request.split(b"\r\n", 1)[0].split()
     if len(line) != 3:
         raise ValueError("richiesta HTTP non valida")
     path = line[1].split(b"?", 1)[0]
     extra = "Cache-Control: no-store\r\n"
-    if line[0] != b"GET":
+    if line[0] == b"POST" and path == b"/save" and config is not None:
+        status, kind = "200 OK", "application/json"
+        try:
+            form = _parse_form(request.split(b"\r\n\r\n", 1)[1])
+            _save_ap_configuration(config, form)
+            state["restart_requested"] = time.ticks_ms()
+            message = "Configurazione salvata. Riavvio: riconnettersi a Bresser Gateway."
+        except (ValueError, TypeError, UnicodeError):
+            status, message = "400 Bad Request", "Configurazione non valida: controllare rete, credenziali WU e intervallo."
+        except OSError:
+            status, message = "500 Internal Server Error", "Salvataggio su flash non riuscito; configurazione precedente conservata."
+        body = json.dumps({"message": message}).encode("utf-8")
+    elif line[0] != b"GET":
         status, kind, body = "405 Method Not Allowed", "text/plain", b"Solo GET"
         extra += "Allow: GET\r\n"
     elif path == b"/api/readings":
@@ -303,7 +470,7 @@ def _ap_response(request, state):
         body = json.dumps(state).encode("utf-8")
     elif path == b"/":
         status, kind = "200 OK", "text/html; charset=utf-8"
-        body = _dashboard().encode("utf-8")
+        body = _dashboard(config).encode("utf-8")
     else:
         # Include probe Android, Apple e Windows: rimangono captive.
         status, kind, body = "302 Found", "text/plain", b"Bresser Gateway"
@@ -316,7 +483,9 @@ def _ap_response(request, state):
 
 def run_ap(config, radio, radio_error=""):
     """AP permanente: DNS captive, HTTP e radio serviti nello stesso ciclo."""
-    station().active(False)
+    wlan = station()
+    wifi = config.get("wifi", {})
+    wlan.active(bool(wifi.get("ssid")))
     ap = network.WLAN(AP_IF)
     ap.active(True)
     ap.ifconfig((AP_IP, "255.255.255.0", AP_IP, AP_IP))
@@ -327,7 +496,24 @@ def run_ap(config, radio, radio_error=""):
     poller = select.poll()
     state = {"sensors": {}, "received": 0, "age_seconds": None,
              "firmware_version": FIRMWARE_VERSION, "firmware_stage": FIRMWARE_STAGE,
-             "sensor_id": None, "rssi": None, "battery_ok": None, "error": radio_error}
+             "sensor_id": None, "rssi": None, "battery_ok": None, "error": radio_error,
+             "model": "", "protocol": "", "unrecognized": 0, "stations": {},
+             "wifi_status": "non configurato", "wu_status": "disabilitato"}
+    receiver = None
+    if not radio_error:
+        try:
+            receiver = AutoReceiver(radio)
+        except Exception as exc:
+            radio_error = str(exc)
+            state["error"] = radio_error
+            print("Errore ricevitore:", radio_error)
+    try:
+        led = ReceiveLED(config["runtime"])
+    except Exception as exc:
+        led = None
+        print("LED non disponibile:", exc)
+    uplink = Uplink(config, wlan)
+    last_connect = None
     last_reading = None
     interval = max(1, min(100, int(config["runtime"].get("poll_interval_ms", 25))))
 
@@ -347,20 +533,48 @@ def run_ap(config, radio, radio_error=""):
         poller.register(dns, select.POLLIN)
         print("AP:", config["runtime"].get("ap_ssid", "Bresser Gateway"))
         print("Captive portal: http://%s | seriale 115200 baud" % AP_IP)
-        print("In attesa di pacchetti Bresser 5-in-1")
+        print("Autoriconoscimento Bresser 5-in-1 / 6-in-1 / 7-in-1 e varianti; 868.3 MHz FSK")
         while True:
             now = time.ticks_ms()
+            if led:
+                led.tick(now)
+            if wifi.get("ssid"):
+                connected = wlan.isconnected()
+                state["wifi_status"] = "connesso" if connected else "connessione in corso"
+                if not connected and (last_connect is None or time.ticks_diff(now, last_connect) >= 30000):
+                    last_connect = now
+                    try:
+                        wlan.disconnect()
+                        wlan.connect(wifi["ssid"], wifi.get("password", ""))
+                        print("Connessione Wi-Fi a", wifi["ssid"], "| AP sempre attivo")
+                    except OSError:
+                        state["wifi_status"] = "errore connessione"
+            state["wu_status"] = uplink.status
+            state["amms_status"] = uplink.amms_status
             if not radio_error:
                 try:
-                    reading = radio.poll()
+                    reading = receiver.poll()
                     if reading is not None:
-                        state["sensors"] = canonical_sensor_values(reading)
-                        for key in ("sensor_id", "rssi", "battery_ok"):
-                            state[key] = reading.get(key)
-                        state["received"] += 1
-                        last_reading = now
-                        state["age_seconds"] = 0
-                        print("Ricevuto:", json.dumps(state))
+                        if led:
+                            led.pulse(now)
+                        if reading.get("error"):
+                            state["unrecognized"] += 1
+                            state["error"] = reading["error"]
+                            print("ERRORE RF:", json.dumps(reading))
+                        else:
+                            state["error"] = ""
+                            state["sensors"] = canonical_sensor_values(reading)
+                            for key in ("sensor_id", "rssi", "battery_ok", "model", "protocol"):
+                                state[key] = reading.get(key)
+                            station_key = "%s:%s:%s" % (reading.get("protocol"), reading.get("sensor_id"), reading.get("channel", 0))
+                            if station_key not in state["stations"] and len(state["stations"]) >= 8:
+                                del state["stations"][next(iter(state["stations"]))]
+                            state["stations"][station_key] = {"model": reading.get("model"), "rssi": reading.get("rssi")}
+                            state["received"] += 1
+                            last_reading = now
+                            state["age_seconds"] = 0
+                            print("Ricevuto:", json.dumps(reading))
+                            uplink.submit(reading)
                 except Exception as exc:
                     radio_error = str(exc)
                     state["error"] = radio_error
@@ -398,10 +612,10 @@ def run_ap(config, radio, radio_error=""):
                                 close_client(sock)
                                 continue
                             item[0].extend(chunk)
-                            if len(item[0]) > 4096:
+                            if len(item[0]) > 8192:
                                 close_client(sock)
-                            elif b"\r\n\r\n" in item[0]:
-                                item[2] = _ap_response(bytes(item[0]), state)
+                            elif _request_complete(item[0]):
+                                item[2] = _ap_response(bytes(item[0]), state, config)
                                 poller.modify(sock, select.POLLOUT)
                         elif event & select.POLLOUT:
                             sent = sock.send(item[2][item[3]:])
@@ -421,7 +635,13 @@ def run_ap(config, radio, radio_error=""):
             for client in list(clients):
                 if time.ticks_diff(time.ticks_ms(), clients[client][1]) > 3000:
                     close_client(client)
+            if "restart_requested" in state and not clients and time.ticks_diff(now, state["restart_requested"]) >= 1500:
+                import machine
+                machine.reset()
     finally:
+        uplink.stop()
+        if led:
+            led.off()
         for client in list(clients):
             close_client(client)
         server.close()

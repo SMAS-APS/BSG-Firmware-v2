@@ -8,16 +8,16 @@ Questo repository contiene il firmware ESP32 del gateway Bresser con:
 
 - logica applicativa in MicroPython;
 - modalita AP permanente con captive portal, dashboard dati e output seriale;
-- configurazione Wi-Fi tramite pagina Web locale nella modalita gateway;
+- configurazione Wi-Fi, AMMS, MQTT/TLS e Wunderground dalla dashboard AP;
 - upload opzionale Weather Underground PWS o RapidFire;
 - invio MQTT/TLS con payload JSON compatto e QoS 1;
 - HTTPS firmato HMAC-SHA256 disponibile come fallback;
-- ricevitore RFM95W/SX1276 e decoder Bresser 5-in-1 in C++ nativo;
-- test del decoder eseguibili anche senza scheda ESP32.
+- ricevitore RFM95W/SX1276 e decoder Bresser 5-in-1 nativo, con estensioni 6/7-in-1 in MicroPython;
+- test su vettori RF, configurazione, LED, captive portal e invii simulati eseguibili senza scheda ESP32.
 
 ## Stato del progetto
 
-Il decoder Bresser 5-in-1 e l'interfaccia MicroPython sono implementati. Il driver nativo configura direttamente l'SX1276 in FSK a 868,3 MHz usando ESP-IDF, senza richiedere Arduino Core o RadioLib.
+Il decoder Bresser 5-in-1 nativo e le estensioni MicroPython 6/7-in-1 sono implementati. Il driver nativo configura direttamente l'SX1276 in FSK a 868,3 MHz usando ESP-IDF, senza richiedere Arduino Core o RadioLib.
 
 Il firmware **0.1.0** e in fase di test avanzato sulla scheda ESP32-WROOM-32
 con modulo RF collegato. Versione e fase sono riportate sulla seriale, nella
@@ -25,25 +25,91 @@ dashboard e nell'API `/api/readings`. La ricezione di pacchetti reali, la
 stabilita e il captive portal vanno verificati durante le sessioni di test;
 la presenza del modulo RF non equivale alla validazione completa del sistema.
 
+## Configurazione dalla dashboard
+
+La prima sezione di **http://192.168.4.1** configura Wi-Fi e Wunderground,
+seguiti da AMMS e MQTT/TLS. Non servono modifiche ai sorgenti o a `/config.json`.
+
+1. Collegarsi all'AP **Bresser Gateway**.
+2. Inserire SSID e password del router; l'AP resta attivo anche con il router connesso.
+3. Abilitare Wunderground se desiderato e inserire Station ID, Station Key,
+   RapidFire/PWS, intervallo e offset UTC locale (60 in inverno, 120 in estate in Italia).
+4. Abilitare AMMS se desiderato; scegliere **HTTPS** oppure **MQTT/TLS**.
+   Configurare ID stazione, ID chiave, chiave HMAC da 32 byte in esadecimale
+   oppure token legacy per HTTPS. Impostare URL, timeout e intervallo AMMS.
+5. Per MQTT impostare host, porta, keepalive e incollare il certificato CA PEM,
+   oppure indicare il percorso di una CA gia presente sulla scheda.
+6. Premere **Salva e riavvia**, quindi riconnettersi all'AP.
+
+AMMS e Wunderground hanno abilitazioni indipendenti. HTTPS e MQTT sono
+trasporti alternativi dello stesso client AMMS; il formato e i topic originali
+`amms/v1/stations/<station_id>/telemetry` e `/status` rimangono invariati.
+MQTT usa l'ID stazione come utente, la chiave HMAC come password, TLS e QoS 1.
+Password, token e chiavi salvate non sono mostrati nel browser: un campo
+segreto vuoto conserva il valore esistente. Cambiando SSID bisogna inserire
+la password della nuova rete; per una rete aperta usare la relativa casella.
+
+Il salvataggio sostituisce atomicamente il JSON. Un nuovo PEM usa un file CA
+separato per conservare il certificato precedente se il salvataggio fallisce.
+Gli invii HTTPS/MQTT e NTP sono eseguiti in un worker; radio, DNS e HTTP
+continuano nel ciclo principale. Gli invii attendono rete e orologio validi.
+La prima **stazione meteo** riconosciuta dopo il riavvio viene scelta per gli
+invii; gli altri ID restano visibili sulla seriale e nell'API e non vengono
+mescolati nello stesso upload. Dati piu vecchi di 120 secondi non vengono inviati.
+
+## Autoriconoscimento e diagnostica RF
+
+| Famiglia radio | Varianti decodificate |
+|---|---|
+| 5-in-1 | Stazioni con formato originale e pluviometro professionale (tipi 0x39..0x3B) |
+| 6-in-1 | Stazione meteo / anemometro 3-in-1, termoigrometro, termometro piscina, sensore suolo |
+| 7-in-1 | Stazione 7-in-1, 3-in-1 temperatura/umidita/pioggia, 8-in-1, sensori PM/CO2/HCHO-VOC |
+
+Il riconoscimento verifica parita/checksum per 5-in-1 e digest LFSR/checksum
+per 6/7-in-1. Il nome identifica **famiglia e tipo sensore**, non necessariamente
+il modello commerciale della console. I messaggi alternati 6-in-1 vengono
+uniti per protocollo, ID e canale, con scadenza dei singoli campi a 120 secondi.
+Non vengono inventati vento o umidita per sensori che non li misurano.
+
+La seriale a 115200 baud stampa versione **0.1.0**, fase **test-avanzato**,
+pin radio, famiglia, ID, canale, batteria, RSSI e misure ricevute. Un frame
+corrotto/non supportato stampa **ERRORE RF** e incrementa il contatore nella
+pagina; il ciclo continua a cercare. L'assenza di pacchetti significa attesa,
+non un errore di protocollo.
+
+Il LED utente della Wemos D1 mini32 usa **GPIO2**, con impulsi di 100 ms per
+ogni frame ricevuto, inclusi quelli non riconosciuti. Il lampeggio non blocca
+il ciclo. `runtime.led_pin`, `led_active_low` e `led_pulse_ms` permettono di
+adattare eventuali varianti della scheda; il valore predefinito e attivo alto.
+
+**Aggiornamento da un'immagine precedente:** questa estensione aggiunge
+`bresser_native.poll_raw()`: compilare e flashare una volta la nuova immagine
+(voce 6, poi 2 di `bsg.cmd`, senza cancellazione completa). Per i successivi
+cambiamenti Python basta la voce 3. Il caricatore verifica la nuova API prima
+di copiare file; il decoder C++ 5-in-1 e le sue API precedenti restano invariati.
+Il vecchio pinout predefinito RESET14/DIO0 26 viene migrato automaticamente a
+RESET32/DIO0 21/DIO1 33. I cablaggi personalizzati sono conservati.
+
 ## Hardware previsto
 
 La configurazione predefinita e la build PlatformIO sono destinate a un
 **ESP32-WROOM-32 con flash da almeno 4 MB, senza PSRAM**.
-Il pinout proposto per il ricevitore RFM95W/SX1276 e il seguente;
+Il cablaggio del modulo RFM95W-915S2 collegato alla Wemos ESP32 mini e il seguente;
 verificare che corrisponda al cablaggio della propria scheda:
 
 | RFM95W | ESP32-WROOM-32 |
 |---|---:|
-| RESET | GPIO14 |
+| RESET | GPIO32 |
 | NSS / CS | GPIO27 |
 | SCK | GPIO18 |
 | MOSI | GPIO23 |
 | MISO | GPIO19 |
-| DIO0 | GPIO26 |
+| DIO0 | GPIO21 |
+| DIO1 | GPIO33 |
 | 3.3V | 3.3V |
 | GND | GND |
 
-Il bus e `SPI2_HOST` (`spi_host=1`). DIO1 e DIO2 non sono utilizzati.
+Il bus e `SPI2_HOST` (`spi_host=1`). DIO1 GPIO33 e configurato come ingresso; la ricezione usa PayloadReady su DIO0. DIO2 non e utilizzato.
 I GPIO6-11 sono riservati alla flash del WROOM-32.
 Il pinout precedente della BSG Board v2 ESP32-S3 non si applica a questa build.
 Per un cablaggio diverso modificare la sezione `radio` di `/config.json`.
@@ -109,8 +175,9 @@ bresser_native.init(
     mosi=23,
     miso=19,
     cs=27,
-    reset=14,
-    dio0=26,
+    reset=32,
+    dio0=21,
+    dio1=33,
     frequency_hz=868_300_000,
 )
 
@@ -124,7 +191,8 @@ if reading:
 Sono inoltre disponibili:
 
 - `bresser_native.decode(payload)` per provare un payload di 26 byte senza radio;
-- `bresser_native.stats()` per contatori e diagnostica;
+- `bresser_native.poll_raw()` per frame grezzi, RSSI e controllo sync; usato da `AutoReceiver` per 5/6/7-in-1;
+- `bresser_native.stats()` per contatori nativi; gli errori di riconoscimento Python sono in `/api/readings`;
 - `bresser_native.status()` per configurazione e versione del chip;
 - `bresser_native.sleep()`, `wake()` e `deinit()`.
 
@@ -143,10 +211,11 @@ Il DNS wildcard e il reindirizzamento HTTP realizzano il captive portal;
 l'apertura automatica varia tra sistemi operativi. La dashboard aggiorna i
 valori ogni due secondi. `runtime.mode` vale `ap` per impostazione predefinita.
 
-## Modalita gateway con upload remoto
+## Modalita gateway legacy
 
-Impostare `runtime.mode = "gateway"` in `/config.json` per usare gli invii
-AMMS e Weather Underground descritti di seguito.
+La modalita AP ora supporta gli invii remoti e resta la scelta predefinita.
+La precedente modalita `runtime.mode = "gateway"` e conservata per le
+configurazioni esistenti; i passaggi manuali seguenti riguardano quella modalita.
 
 
 1. Compilare il firmware seguendo [BUILDING.md](BUILDING.md).
@@ -187,10 +256,13 @@ USB/seriale; usare la pagina Web soltanto in un ambiente fisicamente controllato
 
 ## Limiti iniziali
 
-- È implementato il protocollo Bresser 5-in-1 usato dal firmware attuale.
-- 6-in-1, 7-in-1, sensori fulmini e perdite richiedono decoder aggiuntivi.
+- Autoriconoscimento 5-in-1, 6-in-1 e 7-in-1 con le varianti elencate sopra.
+- I sensori fulmini e perdite e i protocolli diversi non sono decodificati: un frame non riconosciuto genera ERRORE RF.
 - La modalita AP include DNS captive e dashboard; la modalita gateway conserva il precedente server di configurazione essenziale.
 - La ricezione è in polling su DIO0. Il pacchetto resta nel FIFO hardware fino alla lettura, quindi non è necessario eseguire Python dentro un interrupt.
+
+Attribuzioni degli algoritmi e licenze: [BRESSER-NOTICES.md](BRESSER-NOTICES.md).
+LED GPIO2: [variante ufficiale Espressif D1 mini32](https://github.com/espressif/arduino-esp32/blob/master/variants/d1_mini32/pins_arduino.h).
 
 ## Riferimenti tecnici
 
@@ -204,7 +276,7 @@ Il decoder è un'implementazione autonoma del formato Bresser 5-in-1, basata sul
 ## Installazione completa e uso da qualsiasi IDE
 
 Questa procedura mantiene **MicroPython + bresser_native C++**. Non richiede
-Docker, WSL o Arduino. Il protocollo Bresser 5-in-1, la modulazione FSK,
+Docker, WSL o Arduino. Il decoder Bresser 5-in-1 e la modulazione FSK,
 la frequenza 868,3 MHz, i controlli di parita/checksum e le API del modulo
 restano quelli della libreria esistente. Non vengono aggiunti decoder per
 altri protocolli: la sola frequenza 868 MHz non rende compatibili tutte le
@@ -297,8 +369,8 @@ La libreria Bresser non viene riscritta.
 ### 5. Verificare il cablaggio
 
 ESP32-WROOM-32 con almeno 4 MB di flash, RFM95W/SX1276 a 3,3 V e massa comune:
-SCK GPIO18, MOSI GPIO23, MISO GPIO19, CS GPIO27, RESET GPIO14, DIO0 GPIO26.
-Confrontare sempre con lo schema della propria scheda. I GPIO6-11 sono
+SCK GPIO18, MOSI GPIO23, MISO GPIO19, CS GPIO27, RESET GPIO32, DIO0 GPIO21.
+DIO1 GPIO33; LED utente GPIO2. Confrontare con lo schema della scheda. I GPIO6-11 sono
 riservati alla flash. Per pin diversi aggiornare i valori `radio` nel
 `config.example.json` e nel `modules/config_store.py`, oppure usare
 `/config.json` sulla scheda. La frequenza predefinita e 868,3 MHz.
