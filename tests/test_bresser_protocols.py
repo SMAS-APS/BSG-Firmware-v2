@@ -29,6 +29,15 @@ def variant7(kind, battery=False):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_captured_station_frames_from_esp32_rfm95_with_user_pinout(self):
+        # Ricevuti nel test su COM3: due messaggi alternati dello stesso sensore.
+        temperature = bp.decode_6in1(bytes.fromhex("62ef311440a318fefffe1388168057fff04daa00000000000000"))
+        rain = bp.decode_6in1(bytes.fromhex("a0f9311440a318ff77ff1388ff99a9ff016eaa00000000000000"))
+        self.assertEqual(temperature["sensor_id"], rain["sensor_id"])
+        self.assertEqual(temperature["sensor_id"], 0x311440A3)
+        self.assertAlmostEqual(temperature["temperature"], 16.8)
+        self.assertEqual(temperature["humidity"], 57)
+        self.assertAlmostEqual(rain["precipitation"], 665.6)
     def test_reference_6in1_rain_frame(self):
         value = bp.decode_6in1(V6)
         self.assertEqual(value["sensor_id"], 0x21103427)

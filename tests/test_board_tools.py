@@ -28,12 +28,19 @@ class BoardToolsTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "flashare"):
                 exec(board.DEPLOY_VERIFY_CODE, {})
 
+    def test_old_rf_driver_is_rejected_even_if_poll_raw_is_available(self):
+        runtime = types.SimpleNamespace(FIRMWARE_SCHEMA=2)
+        native = types.SimpleNamespace(poll_raw=lambda: None, RF_DRIVER_REVISION=1)
+        with patch.dict("sys.modules", {"bresser_native": native, "bsg_runtime": runtime}), patch("builtins.print"):
+            with self.assertRaisesRegex(AssertionError, "revisione 2"):
+                exec(board.DEPLOY_VERIFY_CODE, {})
+
     def image(self, folder):
         image = pathlib.Path(folder) / "firmware.bin"
         image.write_bytes(b"test-bsg-image")
         image.with_suffix(".bin.json").write_text(json.dumps({
             "schema": 2, "chip": "esp32", "flash_offset": 4096,
-            "native_modules": ["bresser_native"], "native_api": 2,
+            "native_modules": ["bresser_native"], "native_api": 2, "rf_driver_revision": 2,
             "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
         }))
         return image

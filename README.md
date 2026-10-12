@@ -90,6 +90,43 @@ di copiare file; il decoder C++ 5-in-1 e le sue API precedenti restano invariati
 Il vecchio pinout predefinito RESET14/DIO0 26 viene migrato automaticamente a
 RESET32/DIO0 21/DIO1 33. I cablaggi personalizzati sono conservati.
 
+## Correzione ricezione RF e seriale — driver revisione 2
+
+Il monitor del menu (voce 4) apre ora COM prima di riavviare Python, cosi non
+perde i messaggi iniziali. Ogni 10 secondi il firmware stampa versione, numero
+pacchetti, errori, tempo dall'ultima lettura e diagnostica del ricevitore.
+`python serial_monitor.py --port COM3 --no-restart` osserva senza riavvio.
+
+Il confronto con `WeatherSensor.cpp` originale e `RadioLib::beginFSK()` ha
+riallineato `RxConfig` a **0x09** (AGC automatico, trigger RSSI, AFC automatico
+disabilitato) e `SyncConfig` a **0x91** (AA, sync AA 2D, due byte, bit riservato 3
+azzerato). Sono espliciti RSSI a 2 campioni, preamble detector e timeout spenti.
+Ogni impostazione viene riletta per verificare la comunicazione SPI. Il
+pacchetto e ancora di 27 byte: D4 residuo del sync piu 26 byte di payload.
+
+Il driver legge `PayloadReady` dal registro IRQ anche con DIO0 basso, e conta
+queste anomalie in `dio0_misses`. Recupera un FIFO overrun svuotando il FIFO
+prima di riavviare RX; non svuota mai un pacchetto durante la diagnostica.
+`bresser_native.diagnostics()` e `/api/readings` riportano `rx_active`, RSSI
+istantaneo, IRQ1/IRQ2, livelli DIO, configurazione sync/RX e contatori.
+Il valore 4 o 5 di OpMode in FSK e interpretato correttamente come ricezione,
+come il workaround RadioLib per il bit 0 instabile.
+
+**Test reale del 12 ottobre 2026**, ESP32/RFM95W su COM3 con il pinout sopra:
+la configurazione precedente non ha prodotto frame in 60 secondi; quella
+riallineata ha prodotto 6 frame in 60 secondi, inclusi messaggi checksum validi
+famiglia 6-in-1, ID `0x311440A3`, temperatura circa 16,8 C e umidita 57–58%.
+Il protocollo radio e il nome commerciale della console non sono equivalenti.
+Questa verifica non costituisce un test di portata o di tutti i modelli.
+
+Per aggiornare dalla prima immagine 0.1.0, compilare (voce 6) e flashare
+(voce 2) **senza CANCELLA**. La metadata indica `rf_driver_revision: 2`;
+la sola copia di file Python non aggiorna i registri del driver nativo.
+
+Fonti: [WeatherSensor.cpp](https://github.com/matthias-bs/BresserWeatherSensorReceiver/blob/main/src/WeatherSensor.cpp),
+[RadioLib SX127x](https://github.com/jgromes/RadioLib/blob/master/src/modules/SX127x/SX127x.cpp),
+[datasheet Semtech SX1276, registri FSK](https://www.laskakit.cz/user/related_files/ds_sx1276-7-8-9_w_app_v7.pdf).
+
 ## Hardware previsto
 
 La configurazione predefinita e la build PlatformIO sono destinate a un
@@ -194,6 +231,7 @@ Sono inoltre disponibili:
 - `bresser_native.poll_raw()` per frame grezzi, RSSI e controllo sync; usato da `AutoReceiver` per 5/6/7-in-1;
 - `bresser_native.stats()` per contatori nativi; gli errori di riconoscimento Python sono in `/api/readings`;
 - `bresser_native.status()` per configurazione e versione del chip;
+- `bresser_native.diagnostics()` per stato reale dei registri RX, RSSI e IRQ;
 - `bresser_native.sleep()`, `wake()` e `deinit()`.
 
 ## Avvio rapido in AP

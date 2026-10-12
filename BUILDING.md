@@ -46,3 +46,8 @@ caricatore rifiuta il solo deploy su immagini prive della nuova API.
 `firmware.bin.json` include `native_api: 2`. Il cablaggio aggiornato e nel
 README: RESET32, DIO0 21 e DIO1 33. Gli strumenti di build impostano UTF-8
 anche su Windows per congelare correttamente i testi del portale.
+
+La metadata include anche `rf_driver_revision: 2`: necessario un flash della
+nuova immagine per correggere la configurazione FSK. Il caricatore impedisce
+il deploy su driver precedenti. La voce monitor usa `serial_monitor.py` per
+riavviare Python solo dopo aver aperto la porta seriale.

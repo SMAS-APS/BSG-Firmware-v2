@@ -27,10 +27,15 @@ constexpr std::uint8_t kRegFrfMid = 0x07;
 constexpr std::uint8_t kRegFrfLsb = 0x08;
 constexpr std::uint8_t kRegLna = 0x0C;
 constexpr std::uint8_t kRegRxConfig = 0x0D;
+constexpr std::uint8_t kRegRssiConfig = 0x0E;
 constexpr std::uint8_t kRegRssiThreshold = 0x10;
 constexpr std::uint8_t kRegRssiValue = 0x11;
 constexpr std::uint8_t kRegRxBandwidth = 0x12;
 constexpr std::uint8_t kRegAfcBandwidth = 0x13;
+constexpr std::uint8_t kRegPreambleDetect = 0x1F;
+constexpr std::uint8_t kRegRxTimeout1 = 0x20;
+constexpr std::uint8_t kRegRxTimeout2 = 0x21;
+constexpr std::uint8_t kRegRxTimeout3 = 0x22;
 constexpr std::uint8_t kRegPreambleMsb = 0x25;
 constexpr std::uint8_t kRegPreambleLsb = 0x26;
 constexpr std::uint8_t kRegSyncConfig = 0x27;
@@ -80,6 +85,8 @@ ReceiverResult Sx1276Receiver::begin(const ReceiverConfig& config) {
   }
 
   config_ = config;
+  fifo_overruns_ = 0;
+  dio0_misses_ = 0;
 
   spi_bus_config_t bus_config{};
   bus_config.mosi_io_num = config_.mosi;
@@ -206,17 +213,23 @@ ReceiverResult Sx1276Receiver::configure_radio() {
       {kRegFrfMsb, static_cast<std::uint8_t>(frf >> 16)},
       {kRegFrfMid, static_cast<std::uint8_t>(frf >> 8)},
       {kRegFrfLsb, static_cast<std::uint8_t>(frf)},
-      // AFC e AGC automatici; trigger sia su RSSI sia sul preambolo.
-      {kRegRxConfig, 0x1F},
+      // Match RadioLib beginFSK(): AGC on, RSSI trigger, automatic AFC off.
+      // AFC on noise can offset the receiver before the wanted preamble.
+      {kRegRxConfig, 0x09},
+      {kRegRssiConfig, 0x00},  // RSSI averaging: 2 samples, like RadioLib.
       {kRegRssiThreshold, 0xFF},
       // Mantissa 16, esponente 1 -> 250 kHz; DCC frequency predefinita.
       {kRegRxBandwidth, 0x41},
       {kRegAfcBandwidth, 0x41},
+      {kRegPreambleDetect, 0xAA},  // enabled, 2 bytes, tolerance 10.
+      {kRegRxTimeout1, 0x00},
+      {kRegRxTimeout2, 0x00},
+      {kRegRxTimeout3, 0x00},
       // Il trasmettitore usa 40 bit 0xAA. Ne assorbiamo 8 nel sync word.
       {kRegPreambleMsb, 0x00},
       {kRegPreambleLsb, 0x04},
-      // Auto restart con PLL, sync attivo, FIFO dopo sync, 2 byte di sync.
-      {kRegSyncConfig, 0x99},
+      // Auto restart with PLL, AA preamble, sync on, 2 bytes. Bit 3 MUST be 0.
+      {kRegSyncConfig, 0x91},
       {kRegSyncValue1, 0xAA},
       {kRegSyncValue2, 0x2D},
       // Pacchetto fisso, NRZ, nessun address filter e nessun CRC radio.
@@ -235,6 +248,10 @@ ReceiverResult Sx1276Receiver::configure_radio() {
   for (const auto& setting : settings) {
     result = write_register(setting.address, setting.value);
     if (result != ReceiverResult::kOk) return result;
+    std::uint8_t actual = 0;
+    result = read_register(setting.address, &actual);
+    if (result != ReceiverResult::kOk) return result;
+    if (actual != setting.value) return ReceiverResult::kRegisterMismatch;
   }
 
   std::uint8_t lna = 0;
@@ -249,6 +266,9 @@ ReceiverResult Sx1276Receiver::configure_radio() {
 ReceiverResult Sx1276Receiver::restart_receive() {
   ReceiverResult result = write_register(kRegOpMode, kModeStandbyFsk);
   if (result != ReceiverResult::kOk) return result;
+  // Writing FifoOverrun clears FIFO and its flags, as in RadioLib configFSK.
+  result = write_register(kRegIrqFlags2, 0x10);
+  if (result != ReceiverResult::kOk) return result;
   esp_rom_delay_us(100);
   return write_register(kRegOpMode, kModeReceiveFsk);
 }
@@ -258,16 +278,20 @@ ReceiverResult Sx1276Receiver::poll(std::uint8_t* payload26, float* rssi_dbm) {
     return ReceiverResult::kNotInitialized;
   }
 
-  if (gpio_get_level(static_cast<gpio_num_t>(config_.dio0)) == 0) {
-    return ReceiverResult::kNoPacket;
-  }
-
+  // PayloadReady is authoritative; don't discard a packet only because the
+  // external DIO0 line is low. Report that wiring/mapping fault in diagnostics.
   std::uint8_t irq_flags = 0;
   ReceiverResult result = read_register(kRegIrqFlags2, &irq_flags);
   if (result != ReceiverResult::kOk) return result;
+  if (irq_flags & 0x10) {
+    ++fifo_overruns_;
+    result = restart_receive();
+    return result == ReceiverResult::kOk ? ReceiverResult::kNoPacket : result;
+  }
   if ((irq_flags & kIrqPayloadReady) == 0) {
     return ReceiverResult::kNoPacket;
   }
+  if (gpio_get_level(static_cast<gpio_num_t>(config_.dio0)) == 0) ++dio0_misses_;
 
   std::uint8_t rssi_raw = 0;
   result = read_register(kRegRssiValue, &rssi_raw);
@@ -296,6 +320,18 @@ ReceiverResult Sx1276Receiver::sleep() {
 ReceiverResult Sx1276Receiver::wake() {
   if (!initialized_) return ReceiverResult::kNotInitialized;
   return restart_receive();
+}
+
+ReceiverResult Sx1276Receiver::read_diagnostics(std::uint8_t* registers,
+                                               std::size_t length) {
+  if (!initialized_ || registers == nullptr || length < 0x71)
+    return ReceiverResult::kNotInitialized;
+  // Skip FIFO (0x00): reading diagnostics must never consume a packet.
+  for (std::size_t index = 1; index <= 0x42; ++index) {
+    const auto result = read_register(static_cast<std::uint8_t>(index), &registers[index]);
+    if (result != ReceiverResult::kOk) return result;
+  }
+  return read_register(kRegTestDagc, &registers[kRegTestDagc]);
 }
 
 ReceiverResult Sx1276Receiver::write_register(std::uint8_t address,
@@ -376,6 +412,8 @@ const char* receiver_result_name(ReceiverResult result) {
       return "chip_not_found";
     case ReceiverResult::kTransactionError:
       return "transaction_error";
+    case ReceiverResult::kRegisterMismatch:
+      return "register_readback_mismatch";
   }
   return "unknown";
 }

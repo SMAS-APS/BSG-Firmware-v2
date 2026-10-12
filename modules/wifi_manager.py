@@ -515,6 +515,7 @@ def run_ap(config, radio, radio_error=""):
     uplink = Uplink(config, wlan)
     last_connect = None
     last_reading = None
+    last_report = None
     interval = max(1, min(100, int(config["runtime"].get("poll_interval_ms", 25))))
 
     def close_client(client):
@@ -581,6 +582,23 @@ def run_ap(config, radio, radio_error=""):
                     print("Errore radio:", radio_error)
             if last_reading is not None:
                 state["age_seconds"] = time.ticks_diff(now, last_reading) // 1000
+            if last_report is None or time.ticks_diff(now, last_report) >= 10000:
+                last_report = now
+                print("Stato firmware %s | RF: validi=%d errori=%d ultima=%s s | Wi-Fi: %s" % (
+                    FIRMWARE_VERSION, state["received"], state["unrecognized"],
+                    str(state["age_seconds"]), state["wifi_status"]))
+                if not radio_error and callable(getattr(radio, "diagnostics", None)):
+                    try:
+                        diagnostics = radio.diagnostics()
+                        encoded = json.dumps(diagnostics)
+                        state["radio_diagnostics"] = diagnostics
+                        print("Diagnostica RF:", encoded)
+                    except Exception as exc:
+                        print("Diagnostica RF non disponibile:", exc)
+                elif radio_error:
+                    print("ERRORE ricevitore:", radio_error)
+                if last_reading is None:
+                    print("In ascolto: nessun pacchetto Bresser valido ricevuto finora")
             for sock, event in poller.poll(interval):
                 if sock == dns:
                     try:

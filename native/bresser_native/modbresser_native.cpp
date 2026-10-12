@@ -5,6 +5,7 @@ extern "C" {
 }
 
 #include <cstdint>
+#include "driver/gpio.h"
 
 #include "bresser_decoder.hpp"
 #include "sx1276_receiver.hpp"
@@ -251,6 +252,31 @@ mp_obj_t module_status() {
 }
 MP_DEFINE_CONST_FUN_OBJ_0(module_status_obj, module_status);
 
+mp_obj_t module_diagnostics() {
+  std::uint8_t registers[0x71]{};
+  const auto status = receiver.read_diagnostics(registers, sizeof(registers));
+  if (status != bresser::ReceiverResult::kOk) raise_receiver_error("SX1276 diagnostics failed", status);
+  const auto& config = receiver.config();
+  mp_obj_t result = mp_obj_new_dict(16);
+  dict_store(result, MP_QSTR_driver_revision, mp_obj_new_int(2));
+  dict_store(result, MP_QSTR_op_mode, mp_obj_new_int(registers[0x01]));
+  // FSK OpMode bit 0 can read 0 in RX (RadioLib issue #276); 4 and 5 are RX.
+  dict_store(result, MP_QSTR_rx_active, mp_obj_new_bool((registers[0x01] & 0xFE) == 0x04));
+  dict_store(result, MP_QSTR_rssi_live, mp_obj_new_float(-registers[0x11] / 2.0F));
+  dict_store(result, MP_QSTR_irq1, mp_obj_new_int(registers[0x3E]));
+  dict_store(result, MP_QSTR_irq2, mp_obj_new_int(registers[0x3F]));
+  dict_store(result, MP_QSTR_dio0_level, mp_obj_new_int(gpio_get_level(static_cast<gpio_num_t>(config.dio0))));
+  dict_store(result, MP_QSTR_dio1_level, mp_obj_new_int(gpio_get_level(static_cast<gpio_num_t>(config.dio1))));
+  dict_store(result, MP_QSTR_rx_config, mp_obj_new_int(registers[0x0D]));
+  dict_store(result, MP_QSTR_sync_config, mp_obj_new_int(registers[0x27]));
+  dict_store(result, MP_QSTR_sync_word, mp_obj_new_int((registers[0x28] << 8) | registers[0x29]));
+  dict_store(result, MP_QSTR_fifo_overruns, mp_obj_new_int_from_uint(receiver.fifo_overruns()));
+  dict_store(result, MP_QSTR_dio0_misses, mp_obj_new_int_from_uint(receiver.dio0_misses()));
+  dict_store(result, MP_QSTR_packets_seen, mp_obj_new_int_from_uint(module_stats.packets_seen));
+  return result;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(module_diagnostics_obj, module_diagnostics);
+
 mp_obj_t module_stats_function() {
   mp_obj_t result = mp_obj_new_dict(6);
   dict_store(result, MP_QSTR_packets_seen,
@@ -306,6 +332,8 @@ const mp_rom_map_elem_t module_globals_table[] = {
     {MP_ROM_QSTR(MP_QSTR_poll_raw), MP_ROM_PTR(&module_poll_raw_obj)},
     {MP_ROM_QSTR(MP_QSTR_decode), MP_ROM_PTR(&module_decode_obj)},
     {MP_ROM_QSTR(MP_QSTR_status), MP_ROM_PTR(&module_status_obj)},
+    {MP_ROM_QSTR(MP_QSTR_RF_DRIVER_REVISION), MP_ROM_INT(2)},
+    {MP_ROM_QSTR(MP_QSTR_diagnostics), MP_ROM_PTR(&module_diagnostics_obj)},
     {MP_ROM_QSTR(MP_QSTR_stats), MP_ROM_PTR(&module_stats_obj)},
     {MP_ROM_QSTR(MP_QSTR_reset_stats), MP_ROM_PTR(&module_reset_stats_obj)},
     {MP_ROM_QSTR(MP_QSTR_sleep), MP_ROM_PTR(&module_sleep_obj)},

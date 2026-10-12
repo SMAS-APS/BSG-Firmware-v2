@@ -33,6 +33,7 @@ enum class ReceiverResult : int {
   kGpioError = -5,
   kChipNotFound = -6,
   kTransactionError = -7,
+  kRegisterMismatch = -8,
 };
 
 class Sx1276Receiver {
@@ -48,6 +49,9 @@ class Sx1276Receiver {
   ReceiverResult poll(std::uint8_t* payload26, float* rssi_dbm);
   ReceiverResult sleep();
   ReceiverResult wake();
+  ReceiverResult read_diagnostics(std::uint8_t* registers, std::size_t length);
+  std::uint32_t fifo_overruns() const { return fifo_overruns_; }
+  std::uint32_t dio0_misses() const { return dio0_misses_; }
 
   bool initialized() const { return initialized_; }
   std::uint8_t chip_version() const { return chip_version_; }
@@ -67,6 +71,8 @@ class Sx1276Receiver {
   bool bus_owned_ = false;
   bool initialized_ = false;
   std::uint8_t chip_version_ = 0;
+  std::uint32_t fifo_overruns_ = 0;
+  std::uint32_t dio0_misses_ = 0;
 };
 
 const char* receiver_result_name(ReceiverResult result);

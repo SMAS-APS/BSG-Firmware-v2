@@ -89,6 +89,7 @@ class APPortalTests(unittest.TestCase):
             [(client, wifi.select.POLLOUT)],
         ]
         radio = Mock()
+        radio.diagnostics.return_value = {"rx_active": True, "rssi_live": -100, "packets_seen": 1}
         radio.poll.side_effect = [
             {"temperature": 22, "wind_speed": 2, "sensor_id": 7},
             None, None, None, KeyboardInterrupt(),
@@ -111,6 +112,8 @@ class APPortalTests(unittest.TestCase):
         data = json.loads(response.split(b"\r\n\r\n", 1)[1])
         self.assertEqual(data["sensors"]["wind_speed"], 7.2)
         self.assertEqual(data["received"], 1)
+        self.assertTrue(data["radio_diagnostics"]["rx_active"])
+        self.assertTrue(any(str(call.args[0]).startswith("Stato firmware") for call in output.call_args_list))
         self.assertEqual(data["firmware_version"], wifi.FIRMWARE_VERSION)
         self.assertEqual(data["firmware_stage"], wifi.FIRMWARE_STAGE)
         self.assertTrue(any(call.args[0] == "Ricevuto:" for call in output.call_args_list))

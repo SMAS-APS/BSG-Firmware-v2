@@ -131,6 +131,7 @@ def build(sdk, python, env):
                 "firmware_version": runpy.run_path(str(PROJECT / "modules/bsg_runtime.py"))["FIRMWARE_VERSION"],
                 "micropython": VERSION, "native_modules": ["bresser_native"],
                 "native_api": 2,
+                "rf_driver_revision": 2,
                 "flash_offset": 4096,
                 "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}
     image.with_suffix(".bin.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
