@@ -3,6 +3,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 MODULES = pathlib.Path(__file__).resolve().parents[1] / "modules"
@@ -25,6 +26,22 @@ WROOM32_RADIO_CONFIG = {
 
 
 class ConfigStoreTests(unittest.TestCase):
+    def test_save_replaces_previous_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "config.json"
+            path.write_text('{"previous":true}')
+            config_store.save({"wifi": {"ssid": "new"}}, str(path))
+            self.assertEqual(json.loads(path.read_text()), {"wifi": {"ssid": "new"}})
+
+    def test_failed_save_preserves_previous_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "config.json"
+            path.write_text('{"previous":true}')
+            with patch.object(config_store, "replace_file", side_effect=OSError("flash error")):
+                with self.assertRaises(OSError):
+                    config_store.save({"new": True}, str(path))
+            self.assertEqual(json.loads(path.read_text()), {"previous": True})
+            self.assertTrue(path.with_name("config.json.tmp").is_file())
     def _load(self, document):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "config.json"

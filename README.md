@@ -1,5 +1,7 @@
 # BSG Firmware v2 - MicroPython + ricevitore nativo
 
+**Per installare la scheda rapidamente:** aprire [GUIDA_FLASH.md](GUIDA_FLASH.md) e usare il menu `bsg.cmd`.
+
 Questo repository contiene il firmware ESP32 del gateway Bresser con:
 
 - logica applicativa in MicroPython;
@@ -53,17 +55,24 @@ Vedere gli step di installazione in fondo a questo README.
 
 ```text
 BSG-Firmware-v2/
+|-- bsg.py / bsg.cmd / bsg.ps1
+|-- GUIDA_FLASH.md
+|-- build_firmware.py
+|-- requirements-build.txt / requirements-tools.txt
+|-- platformio.ini
 |-- boot.py
 |-- main.py
 |-- manifest.py
 |-- config.example.json
 |-- modules/
+|   |-- bsg_runtime.py
 |   |-- config_store.py
 |   |-- main_app.py
 |   |-- mqtt_transport.py
 |   |-- wifi_manager.py
 |   `-- wu_support.py
 |-- native/
+|   |-- boot.py / main.py (avvio congelato aggiornabile)
 |   |-- micropython.cmake
 |   `-- bresser_native/
 |       |-- bresser_decoder.cpp/.hpp
@@ -219,6 +228,9 @@ git submodule update --init --recursive
 
 Nella copia di lavoro attuale, entrare invece nella cartella
 `BSG-Firmware-v2-main`, senza rinominarla o spostarla.
+Se usi la versione della PR prima della sua integrazione in `main`, seleziona
+il branch `codex/micropython-local-build` quando cloni il repository.
+
 Tutti i comandi seguenti vanno eseguiti nella cartella che contiene
 `build_firmware.py`, `manifest.py`, `modules` e `native`.
 
@@ -293,8 +305,12 @@ python build_firmware.py build
 ```
 
 Lo script compila MicroPython con `BOARD=ESP32_GENERIC`, include
-`native/micropython.cmake` e congela i file del `manifest.py`.
-Il risultato e `.pio/build/esp32-wroom-32/firmware.bin`.
+`native/micropython.cmake` e congela i file del `manifest.py`. Gli avvii
+congelati delegano a `/boot.py` e `/main.py` quando presenti, e i moduli
+del filesystem hanno precedenza: gli aggiornamenti Python non richiedono
+una nuova build C++.
+Il risultato e `.pio/build/esp32-wroom-32/firmware.bin`, con il suo
+`firmware.bin.json` per la verifica di scheda e SHA256.
 Non vengono compilati i file Python come un'applicazione Arduino.
 
 Se ESP-IDF non viene trovato, passare il percorso esplicito:
@@ -318,7 +334,8 @@ python build_firmware.py flash --port COM5
 python build_firmware.py monitor --port COM5
 ```
 
-`flash` compila prima del caricamento e usa la mappa flash di ESP-IDF.
+`flash` compila prima del caricamento, verifica lo SHA256, scrive la nuova
+immagine combinata a 0x1000 e trasferisce anche i file Python aggiornati.
 Chiudere il monitor prima di un nuovo caricamento. Se necessario, tenere
 premuto BOOT all'inizio del collegamento e rilasciarlo quando inizia la scrittura.
 Uscire dal monitor ESP-IDF con `Ctrl+]`.
@@ -379,3 +396,28 @@ Versionare sorgenti, script, configurazioni di build e documentazione.
 AMMSUtils resta un submodule. `.pio/`, binari, cache, configurazioni con
 credenziali e toolchain non devono essere caricati nel repository.
 La parte radio e il captive portal devono essere validati sulla scheda reale.
+
+### 11. Aggiornare il Python senza ricompilare
+
+Dopo l'installazione dell'immagine aggiornata, usare il menu `bsg.cmd`
+(voce 3), oppure:
+
+```sh
+python bsg.py deploy --port COM5
+```
+
+Lo strumento aggiorna gli script nel filesystem, verifica prima la presenza
+del modulo nativo Bresser, conserva configurazione/certificati e riavvia la
+scheda. Non modifica il C++ e non cancella la flash.
+Per installare un'immagine gia compilata senza ESP-IDF:
+
+```sh
+python -m pip install -r requirements-tools.txt
+python bsg.py ports
+python bsg.py flash --port COM5
+python bsg.py monitor --port COM5
+```
+
+Aggiungere `--erase` a `flash` solo quando si vuole cancellare tutta la flash,
+per esempio nella prima installazione da un firmware diverso.
+La guida semplificata completa e [GUIDA_FLASH.md](GUIDA_FLASH.md).

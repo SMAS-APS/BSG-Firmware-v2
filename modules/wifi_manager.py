@@ -5,7 +5,7 @@ import select
 
 import network
 
-from config_store import save, validate_weather_underground
+from config_store import save, validate_weather_underground, replace_file
 from wu_support import canonical_sensor_values
 
 
@@ -142,12 +142,7 @@ def _save_mqtt_ca(path, pem):
         stream.write(pem)
         if not pem.endswith("\n"):
             stream.write("\n")
-    import os
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-    os.rename(temporary_path, path)
+    replace_file(temporary_path, path)
 
 
 def _file_exists(path):
@@ -411,7 +406,14 @@ def run_ap(config, radio, radio_error=""):
                             item[3] += sent
                             if not sent or item[3] >= len(item[2]):
                                 close_client(sock)
-                    except (OSError, ValueError):
+                    except OSError as exc:
+                        # Una socket non bloccante puo non essere pronta anche
+                        # dopo poll: riproviamo senza troncare la risposta HTTP.
+                        if exc.args and exc.args[0] in (11, 35, 10035):
+                            continue
+                        if sock in clients:
+                            close_client(sock)
+                    except ValueError:
                         if sock in clients:
                             close_client(sock)
             for client in list(clients):

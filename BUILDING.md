@@ -20,3 +20,22 @@ Il driver RFM95W/SX1276 e il decoder Bresser restano in C++ nativo;
 applicazione, seriale e captive portal restano in MicroPython.
 I sorgenti MicroPython vanno nella cache utente esterna; la build e in `.pio/`.
 Il risultato e `.pio/build/esp32-wroom-32/firmware.bin`.
+
+## Flash e sviluppo Python semplificati
+
+Aprire [GUIDA_FLASH.md](GUIDA_FLASH.md) o avviare `bsg.cmd` su Windows.
+Dopo la build, l'immagine e accompagnata da `firmware.bin.json` (SHA256,
+scheda e modulo nativo). Con la coppia gia compilata non serve ESP-IDF per
+installare la scheda: bastano `requirements-tools.txt` e `bsg.py flash`.
+
+```sh
+python bsg.py ports
+python bsg.py flash --port COM5
+python bsg.py deploy --port COM5
+python bsg.py monitor --port COM5
+```
+
+`flash` installa MicroPython+Bresser e copia anche gli script aggiornati.
+`deploy` aggiorna solo i file Python e riavvia la scheda, conservando i dati.
+Il C++ della radio resta incluso nell'interprete. I moduli congelati restano
+come ripiego; il nuovo avvio usa quelli nel filesystem quando presenti.

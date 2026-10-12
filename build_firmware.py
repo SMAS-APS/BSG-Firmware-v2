@@ -1,5 +1,7 @@
 """Build locale ESP-IDF/MicroPython, utilizzabile da qualsiasi IDE o terminale."""
 import argparse
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -121,6 +123,12 @@ def build(sdk, python, env):
     run([python, SOURCE / "ports/esp32/makeimg.py", BUILD / "sdkconfig",
          BUILD / "bootloader/bootloader.bin", BUILD / "partition_table/partition-table.bin",
          BUILD / "micropython.bin", BUILD / "firmware.bin", BUILD / "micropython.uf2"], env=env)
+    image = BUILD / "firmware.bin"
+    metadata = {"schema": 2, "chip": "esp32", "board": "ESP32-WROOM-32",
+                "micropython": VERSION, "native_modules": ["bresser_native"],
+                "flash_offset": 4096,
+                "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}
+    image.with_suffix(".bin.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print("Firmware MicroPython + Bresser:", BUILD / "firmware.bin")
 
 
@@ -145,7 +153,12 @@ def main(argv=None):
     if args.action in ("build", "flash"):
         build(sdk, python, env)
     if args.action in ("flash", "monitor"):
-        idf_command(sdk, python, env, [args.action], args.port)
+        if args.action == "flash":
+            # Caricare anche gli script evita che vecchi file nel filesystem
+            # continuino a prevalere sull'applicazione della nuova immagine.
+            run([python, PROJECT / "bsg.py", "flash", "--port", args.port], env=env)
+        else:
+            idf_command(sdk, python, env, ["monitor"], args.port)
 
 
 if __name__ == "__main__":

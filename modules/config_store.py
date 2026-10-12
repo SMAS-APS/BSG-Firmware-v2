@@ -85,16 +85,14 @@ def save(config, path=CONFIG_PATH):
     with open(temporary_path, "w") as stream:
         json.dump(config, stream)
 
-    try:
-        import os
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        os.rename(temporary_path, path)
-    except Exception:
-        # Mantiene il file temporaneo per non perdere i dati in caso di errore flash.
-        raise
+    replace_file(temporary_path, path)
+
+
+def replace_file(source, target):
+    # LittleFS (ESP32) sostituisce atomicamente con rename. Su CPython/Windows
+    # serve replace: in entrambi i casi non eliminiamo prima il vecchio file.
+    import os
+    getattr(os, "replace", os.rename)(source, target)
 
 
 def _file_exists(path):

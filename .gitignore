@@ -9,6 +9,8 @@ config.json
 *.bin
 *.elf
 *.map
+*.mpy
+*.uf2
 config.json.tmp
 wu-rain-state.json*
 mqtt-ca.crt

@@ -19,6 +19,7 @@ def upload(source, target, env):
 
 node = env.Alias("buildprog", [], build)
 AlwaysBuild(node)
-flash = env.Alias("upload", node, upload)
+# build_firmware.py flash compila gia': non ripetere la stessa build nel grafo.
+flash = env.Alias("upload", [], upload)
 AlwaysBuild(flash)
 Default(node)

@@ -73,16 +73,25 @@ class APPortalTests(unittest.TestCase):
         server.accept.return_value = (client, ("192.168.4.2", 1234))
         dns.recvfrom.return_value = (question(), ("192.168.4.2", 5678))
         client.recv.return_value = b"GET /api/readings HTTP/1.1\r\n\r\n"
-        client.send.side_effect = lambda data: len(data)
+        send_calls = []
+
+        def send(data):
+            send_calls.append(data)
+            if len(send_calls) == 1:
+                raise OSError(11, "would block")
+            return len(data)
+
+        client.send.side_effect = send
         poller = Mock()
         poller.poll.side_effect = [
             [(dns, wifi.select.POLLIN), (server, wifi.select.POLLIN)],
             [(client, wifi.select.POLLIN)], [(client, wifi.select.POLLOUT)],
+            [(client, wifi.select.POLLOUT)],
         ]
         radio = Mock()
         radio.poll.side_effect = [
             {"temperature": 22, "wind_speed": 2, "sensor_id": 7},
-            None, None, KeyboardInterrupt(),
+            None, None, None, KeyboardInterrupt(),
         ]
         with patch.object(wifi.network, "WLAN", side_effect=[station, ap]), \
              patch.object(wifi.socket, "socket", side_effect=[server, dns]), \
@@ -92,7 +101,8 @@ class APPortalTests(unittest.TestCase):
              patch("builtins.print") as output:
             with self.assertRaises(KeyboardInterrupt):
                 wifi.run_ap({"runtime": {}}, radio)
-        self.assertEqual(radio.poll.call_count, 4)
+        self.assertEqual(radio.poll.call_count, 5)
+        self.assertEqual(client.send.call_count, 2)
         self.assertEqual(dns.sendto.call_args.args[0][-4:], b"\xc0\xa8\x04\x01")
         response = client.send.call_args.args[0]
         data = json.loads(response.split(b"\r\n\r\n", 1)[1])
