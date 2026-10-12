@@ -16,6 +16,12 @@ spec.loader.exec_module(board)
 
 
 class BoardToolsTests(unittest.TestCase):
+    def test_version_check_accepts_earlier_updateable_firmware(self):
+        runtime = types.SimpleNamespace(FIRMWARE_SCHEMA=2)
+        with patch.dict("sys.modules", {"bresser_native": types.SimpleNamespace(), "bsg_runtime": runtime}), \
+             patch("builtins.print"):
+            exec(board.VERIFY_CODE, {})
+
     def image(self, folder):
         image = pathlib.Path(folder) / "firmware.bin"
         image.write_bytes(b"test-bsg-image")

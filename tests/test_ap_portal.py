@@ -108,6 +108,8 @@ class APPortalTests(unittest.TestCase):
         data = json.loads(response.split(b"\r\n\r\n", 1)[1])
         self.assertEqual(data["sensors"]["wind_speed"], 7.2)
         self.assertEqual(data["received"], 1)
+        self.assertEqual(data["firmware_version"], wifi.FIRMWARE_VERSION)
+        self.assertEqual(data["firmware_stage"], wifi.FIRMWARE_STAGE)
         self.assertTrue(any(call.args[0] == "Ricevuto:" for call in output.call_args_list))
         client.close.assert_called_once()
         server.close.assert_called_once()

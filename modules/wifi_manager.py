@@ -7,6 +7,7 @@ import network
 
 from config_store import save, validate_weather_underground, replace_file
 from wu_support import canonical_sensor_values
+from bsg_runtime import FIRMWARE_VERSION, FIRMWARE_STAGE
 
 
 def _interface_id(name, fallback):
@@ -282,7 +283,7 @@ for(const k of ['temperature','humidity','wind_speed','wind_gust','wind_directio
 const v=d.sensors[k];document.getElementById(k).textContent=v==null?'—':Number(v).toLocaleString('it-IT',{maximumFractionDigits:1});}
 document.getElementById('status').textContent=d.error?'Errore radio: '+d.error:d.age_seconds==null?'In attesa di un pacchetto Bresser 5-in-1':
 'Ultima ricezione: '+d.age_seconds+' s fa'+(d.age_seconds>120?' · Dati non aggiornati':'');
-document.getElementById('details').textContent='Pacchetti validi: '+d.received+(d.sensor_id==null?'':' · Sensore: '+d.sensor_id)+
+document.getElementById('details').textContent='Firmware '+d.firmware_version+' · '+d.firmware_stage+' · Pacchetti validi: '+d.received+(d.sensor_id==null?'':' · Sensore: '+d.sensor_id)+
 (d.rssi==null?'':' · RSSI: '+d.rssi+' dBm')+(d.battery_ok==null?'':d.battery_ok?' · Batteria OK':' · Batteria scarica');
 }catch(e){document.getElementById('status').textContent='Connessione al gateway interrotta';}finally{setTimeout(refresh,2000);}}
 refresh();</script></body></html>"""
@@ -325,6 +326,7 @@ def run_ap(config, radio, radio_error=""):
     clients = {}
     poller = select.poll()
     state = {"sensors": {}, "received": 0, "age_seconds": None,
+             "firmware_version": FIRMWARE_VERSION, "firmware_stage": FIRMWARE_STAGE,
              "sensor_id": None, "rssi": None, "battery_ok": None, "error": radio_error}
     last_reading = None
     interval = max(1, min(100, int(config["runtime"].get("poll_interval_ms", 25))))

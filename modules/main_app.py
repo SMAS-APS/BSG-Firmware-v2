@@ -4,7 +4,7 @@ import time
 import bresser_native
 
 from config_store import is_provisioned, load, validate_weather_underground
-from bsg_runtime import FIRMWARE_BOARD
+from bsg_runtime import FIRMWARE_BOARD, FIRMWARE_VERSION, FIRMWARE_STAGE
 import wifi_manager
 from wu_support import canonical_sensor_values
 
@@ -114,6 +114,7 @@ def _build_weather_underground(config):
 
 
 def run():
+    print("Bresser Gateway firmware %s (%s)" % (FIRMWARE_VERSION, FIRMWARE_STAGE))
     config = load()
     if config["runtime"].get("mode", "ap") == "ap":
         radio_error = ""

@@ -5,6 +5,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import runpy
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent
@@ -13,6 +14,8 @@ VERIFY_CODE = (
     "import sys, bresser_native, bsg_runtime; "
     "assert bsg_runtime.FIRMWARE_SCHEMA >= 2, 'Aggiornare il firmware BSG'; "
     "print('MicroPython:', sys.version); "
+    "print('Firmware BSG:', getattr(bsg_runtime, 'FIRMWARE_VERSION', 'precedente a 0.1.0'), "
+    "getattr(bsg_runtime, 'FIRMWARE_STAGE', 'non indicata')); "
     "print('Libreria Bresser presente; avvio Python aggiornabile OK')"
 )
 
@@ -128,7 +131,8 @@ def monitor(port):
 
 
 def menu():
-    print("Bresser Gateway - MicroPython / ESP32-WROOM-32")
+    version = runpy.run_path(str(PROJECT / "modules/bsg_runtime.py"))["FIRMWARE_VERSION"]
+    print("Bresser Gateway %s - MicroPython / ESP32-WROOM-32" % version)
     while True:
         print("\n1 Porte USB\n2 Installa MicroPython+Bresser (immagine gia compilata)\n"
               "3 Aggiorna solo i file Python\n4 Monitor seriale\n5 Verifica MicroPython\n"

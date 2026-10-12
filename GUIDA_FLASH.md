@@ -1,5 +1,10 @@
 # Installare MicroPython+Bresser e aggiornare il programma
 
+**Firmware 0.1.0 - test avanzato con ESP32 e modulo RF collegato.**
+
+Nell'ambiente di test gia operativo usare normalmente il flash **senza `--erase`**
+e premere Invio alla richiesta CANCELLA, per conservare configurazione e dati.
+
 Questa scheda usa **ESP32-WROOM-32**, con almeno 4 MB di flash.
 Il collegamento USB e una **porta seriale**, non una chiavetta USB.
 

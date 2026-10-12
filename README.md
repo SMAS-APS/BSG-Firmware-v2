@@ -1,4 +1,6 @@
-# BSG Firmware v2 - MicroPython + ricevitore nativo
+# BSG Firmware v2 - versione 0.1.0
+
+**Stato: test avanzato su ESP32-WROOM-32 con modulo RF collegato.**
 
 **Per installare la scheda rapidamente:** aprire [GUIDA_FLASH.md](GUIDA_FLASH.md) e usare il menu `bsg.cmd`.
 
@@ -17,7 +19,11 @@ Questo repository contiene il firmware ESP32 del gateway Bresser con:
 
 Il decoder Bresser 5-in-1 e l'interfaccia MicroPython sono implementati. Il driver nativo configura direttamente l'SX1276 in FSK a 868,3 MHz usando ESP-IDF, senza richiedere Arduino Core o RadioLib.
 
-La parte radio deve essere validata sulla scheda reale, perché in questo ambiente non è collegato un ESP32 con RFM95W. Prima di sostituire un gateway operativo, confrontare per almeno alcune ore i valori ricevuti dal firmware precedente e da questo firmware.
+Il firmware **0.1.0** e in fase di test avanzato sulla scheda ESP32-WROOM-32
+con modulo RF collegato. Versione e fase sono riportate sulla seriale, nella
+dashboard e nell'API `/api/readings`. La ricezione di pacchetti reali, la
+stabilita e il captive portal vanno verificati durante le sessioni di test;
+la presenza del modulo RF non equivale alla validazione completa del sistema.
 
 ## Hardware previsto
 
@@ -228,8 +234,7 @@ git submodule update --init --recursive
 
 Nella copia di lavoro attuale, entrare invece nella cartella
 `BSG-Firmware-v2-main`, senza rinominarla o spostarla.
-Se usi la versione della PR prima della sua integrazione in `main`, seleziona
-il branch `codex/micropython-local-build` quando cloni il repository.
+Il firmware, il programma di caricamento e la guida sono disponibili nel branch `main`.
 
 Tutti i comandi seguenti vanno eseguiti nella cartella che contiene
 `build_firmware.py`, `manifest.py`, `modules` e `native`.

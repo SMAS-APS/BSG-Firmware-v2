@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import runpy
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent
@@ -125,6 +126,7 @@ def build(sdk, python, env):
          BUILD / "micropython.bin", BUILD / "firmware.bin", BUILD / "micropython.uf2"], env=env)
     image = BUILD / "firmware.bin"
     metadata = {"schema": 2, "chip": "esp32", "board": "ESP32-WROOM-32",
+                "firmware_version": runpy.run_path(str(PROJECT / "modules/bsg_runtime.py"))["FIRMWARE_VERSION"],
                 "micropython": VERSION, "native_modules": ["bresser_native"],
                 "flash_offset": 4096,
                 "sha256": hashlib.sha256(image.read_bytes()).hexdigest()}
