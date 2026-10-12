@@ -22,15 +22,23 @@ DEFAULT_CONFIG = {
         "mqtt_ca_cert": "/mqtt-ca.crt",
     },
     "radio": {
-        "spi_host": 3,
-        "sck": 18,
-        "mosi": 23,
-        "miso": 19,
-        "cs": 27,
-        "reset": 32,
-        "dio0": 21,
+        "spi_host": 1,
+        "sck": 12,
+        "mosi": 11,
+        "miso": 13,
+        "cs": 10,
+        "reset": 14,
+        "dio0": 6,
         "frequency_hz": 868_300_000,
         "frequency_offset_hz": 0,
+    },
+    "weather_underground": {
+        "enabled": False,
+        "station_id": "",
+        "station_key": "",
+        "mode": "rapidfire",
+        "upload_interval_seconds": 10,
+        "utc_offset_minutes": 60,
     },
     "runtime": {
         "poll_interval_ms": 25,
@@ -93,6 +101,22 @@ def _file_exists(path):
             return True
     except OSError:
         return False
+
+
+def validate_weather_underground(config):
+    section = config.get("weather_underground", {})
+    if not section.get("enabled"):
+        return
+    if not section.get("station_id") or not section.get("station_key"):
+        raise ValueError("credenziali Weather Underground incomplete")
+    if section.get("mode") not in ("rapidfire", "standard"):
+        raise ValueError("modalita' Weather Underground non valida")
+    interval = int(section.get("upload_interval_seconds", 10))
+    if interval < 10:
+        raise ValueError("intervallo Weather Underground minimo: 10 secondi")
+    offset = int(section.get("utc_offset_minutes", 60))
+    if offset < -720 or offset > 840:
+        raise ValueError("offset UTC Weather Underground non valido")
 
 
 def is_provisioned(config):

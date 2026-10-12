@@ -36,13 +36,13 @@ https://github.com/micropython/micropython/tree/master/ports/esp32
 
 ## 2. Compilare con il modulo Bresser
 
-Impostare `BSG_MICROPY_DIR` al percorso assoluto della directory `BSG-Firmware-v2/esp32`.
+Impostare `BSG_MICROPY_DIR` al percorso assoluto della directory `BSG-Firmware-v2`.
 
 ```sh
 cd ports/esp32
 make submodules
 make \
-  BOARD=ESP32_GENERIC \
+  BOARD=ESP32_GENERIC_S3 \
   FROZEN_MANIFEST="$BSG_MICROPY_DIR/manifest.py" \
   USER_C_MODULES="$BSG_MICROPY_DIR/native/micropython.cmake"
 ```
@@ -50,27 +50,30 @@ make \
 Il risultato si trova normalmente in:
 
 ```text
-ports/esp32/build-ESP32_GENERIC/firmware.bin
+ports/esp32/build-ESP32_GENERIC_S3/firmware.bin
 ```
 
-La build usa l'ESP32 classico. Non selezionare una board ESP32-S3 per il Wemos D1 Mini32.
+La BSG Board v2 usa ESP32-S3. Se il modulo montato impiega PSRAM octal,
+aggiungere anche `BOARD_VARIANT=SPIRAM_OCT` alla build.
 
 ## 3. Installare
 
 Individuare la porta seriale e cancellare/installare il firmware seguendo la guida ufficiale MicroPython. Un esempio, da adattare alla propria porta:
 
 ```sh
-python -m esptool --chip esp32 --port /dev/ttyUSB0 erase_flash
-python -m esptool --chip esp32 --port /dev/ttyUSB0 write_flash -z 0x1000 build-ESP32_GENERIC/firmware.bin
+python -m esptool --chip esp32s3 --port /dev/ttyACM0 erase_flash
+python -m esptool --chip esp32s3 --port /dev/ttyACM0 write_flash -z 0x0 build-ESP32_GENERIC_S3/firmware.bin
 ```
 
 `boot.py`, `main.py` e i moduli applicativi sono congelati nell'immagine dal manifest. Il solo file da creare sulla flash della scheda è `/config.json`.
 
 ```sh
-mpremote connect /dev/ttyUSB0 cp "$BSG_MICROPY_DIR/config.example.json" :config.json
+mpremote connect /dev/ttyACM0 cp "$BSG_MICROPY_DIR/config.example.json" :config.json
 ```
 
 Modificare prima la copia locale oppure usare il portale Web al primo avvio.
+Lo stato pluviometrico Weather Underground viene creato automaticamente come
+`/wu-rain-state.json`; non deve essere preparato manualmente.
 
 ## 4. Test rapido dal REPL
 
@@ -105,5 +108,6 @@ ctest --test-dir tests/build --output-on-failure
 - `RuntimeError: SX1276 init failed`: verificare alimentazione, massa, CS, RESET e bus SPI.
 - `chip_version` diverso da `0x12`: il dispositivo non risponde correttamente via SPI o non è un SX1276 compatibile.
 - `packets_seen` aumenta ma `packets_decoded` resta a zero: controllare frequenza, antenna, cablaggio e contatori `sync_errors`, `parity_errors`, `checksum_errors`.
-- Nessun pacchetto: verificare che DIO0 sia collegato a GPIO21 e che il sensore trasmetta a 868,3 MHz.
-- Errore TLS: verificare che l'orologio sia stato sincronizzato via NTP e che il server presenti una catena compatibile con ISRG Root X1.
+- Nessun pacchetto: verificare che DIO0 sia collegato a GPIO6 e che il sensore trasmetta a 868,3 MHz.
+- Errore TLS AMMS: verificare che l'orologio sia sincronizzato via NTP e che il server presenti una catena compatibile con ISRG Root X1.
+- Errore TLS Weather Underground: verificare l'orologio e la catena compatibile con Amazon Root CA 1.

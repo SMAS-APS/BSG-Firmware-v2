@@ -17,15 +17,23 @@
     "mqtt_ca_cert": "/mqtt-ca.crt"
   },
   "radio": {
-    "spi_host": 3,
-    "sck": 18,
-    "mosi": 23,
-    "miso": 19,
-    "cs": 27,
-    "reset": 32,
-    "dio0": 21,
+    "spi_host": 1,
+    "sck": 12,
+    "mosi": 11,
+    "miso": 13,
+    "cs": 10,
+    "reset": 14,
+    "dio0": 6,
     "frequency_hz": 868300000,
     "frequency_offset_hz": 0
+  },
+  "weather_underground": {
+    "enabled": false,
+    "station_id": "",
+    "station_key": "",
+    "mode": "rapidfire",
+    "upload_interval_seconds": 10,
+    "utc_offset_minutes": 60
   },
   "runtime": {
     "poll_interval_ms": 25,

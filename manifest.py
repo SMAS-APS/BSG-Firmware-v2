@@ -6,16 +6,18 @@ freeze("modules", (
     "config_store.py",
     "main_app.py",
     "mqtt_transport.py",
+    "wu_support.py",
     "wifi_manager.py",
 ))
 
-freeze("../external/AMMSUtils", (
+freeze("external/AMMSUtils", (
     "amms/__init__.py",
     "amms/auth.py",
     "amms/client.py",
     "amms/credentials.py",
     "amms/payload.py",
     "amms/mqtt.py",
+    "amms/weather_underground.py",
     "amms/transports/__init__.py",
     "amms/transports/ca_cert.py",
     "amms/transports/micropython_http.py",

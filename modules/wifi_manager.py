@@ -3,7 +3,7 @@ import time
 
 import network
 
-from config_store import save
+from config_store import save, validate_weather_underground
 
 
 def _interface_id(name, fallback):
@@ -100,7 +100,7 @@ def _page(message=""):
 <style>body{font-family:sans-serif;max-width:34rem;margin:2rem auto;padding:0 1rem}
 label{display:block;margin-top:1rem}input,select,textarea{width:100%;box-sizing:border-box;padding:.65rem}
 button{margin-top:1.4rem;padding:.7rem 1rem}.message{color:#075}</style></head>
-<body><h1>Bresser Gateway</h1><p>Configura rete e accesso AMMS.</p>
+<body><h1>Bresser Gateway</h1><p>Configura rete, AMMS e Weather Underground.</p>
 <p class=\"message\">%s</p>
 <form method=\"post\" action=\"/save\">
 <label>Nome rete Wi-Fi<input name=\"ssid\" required></label>
@@ -119,6 +119,15 @@ button{margin-top:1.4rem;padding:.7rem 1rem}.message{color:#075}</style></head>
 <label>Host MQTT<input name=\"mqtt_host\" value=\"weather.iacca.ml\"></label>
 <label>Porta MQTT/TLS<input name=\"mqtt_port\" value=\"8883\" inputmode=\"numeric\"></label>
 <label>Certificato CA MQTT (PEM)<textarea name=\"mqtt_ca_pem\" rows=\"7\" placeholder=\"-----BEGIN CERTIFICATE-----\"></textarea></label>
+<h2>Weather Underground</h2>
+<label><input name=\"wu_enabled\" type=\"checkbox\" style=\"width:auto\"> Abilita upload WU</label>
+<label>Station ID WU<input name=\"wu_station_id\"></label>
+<label>Station key WU<input name=\"wu_station_key\" type=\"password\"></label>
+<label>Modalita' WU<select name=\"wu_mode\">
+<option value=\"rapidfire\">RapidFire</option><option value=\"standard\">PWS standard</option>
+</select></label>
+<label>Intervallo upload WU (secondi)<input name=\"wu_interval\" value=\"10\" inputmode=\"numeric\"></label>
+<label>Offset UTC locale (minuti)<input name=\"wu_utc_offset\" value=\"60\" inputmode=\"numeric\"></label>
 <button type=\"submit\">Salva e riavvia</button></form></body></html>""" % message
 
 
@@ -189,6 +198,14 @@ def provision(config, ap_name="Bresser Gateway"):
                     config["amms"]["mqtt_host"] = form.get("mqtt_host", "")
                     config["amms"]["mqtt_port"] = int(form.get("mqtt_port", "8883"))
                     config["amms"]["mqtt_ca_cert"] = "/mqtt-ca.crt"
+                    wu = config["weather_underground"]
+                    wu["enabled"] = form.get("wu_enabled") == "on"
+                    wu["station_id"] = form.get("wu_station_id", "")
+                    wu["station_key"] = form.get("wu_station_key", "")
+                    wu["mode"] = form.get("wu_mode", "rapidfire")
+                    wu["upload_interval_seconds"] = int(form.get("wu_interval", "10"))
+                    wu["utc_offset_minutes"] = int(form.get("wu_utc_offset", "60"))
+                    validate_weather_underground(config)
                     mqtt_ca_pem = form.get("mqtt_ca_pem", "").strip()
                     if config["amms"]["transport"] == "mqtt" and mqtt_ca_pem:
                         _save_mqtt_ca("/mqtt-ca.crt", mqtt_ca_pem)
