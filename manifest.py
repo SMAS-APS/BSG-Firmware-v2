@@ -12,6 +12,9 @@ freeze("modules", (
     "mqtt_transport.py",
     "wu_support.py",
     "wifi_manager.py",
+    "dashboard.py",
+    "dashboard_service.py",
+    "station_clock.py",
 ))
 
 freeze("external/AMMSUtils", (

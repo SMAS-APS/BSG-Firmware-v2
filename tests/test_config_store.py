@@ -49,6 +49,12 @@ class ConfigStoreTests(unittest.TestCase):
             path.write_text(json.dumps(document), encoding="utf-8")
             return config_store.load(str(path))
 
+    def test_legacy_gateway_upload_remains_enabled_with_universal_dashboard(self):
+        document = dict(wifi=dict(ssid='home'), amms=dict(token='legacy'), runtime=dict(mode='gateway'))
+        self.assertTrue(self._load(document)['amms']['enabled'])
+        document['amms']['enabled'] = False
+        self.assertFalse(self._load(document)['amms']['enabled'])
+
     def test_migrates_legacy_token_to_bearer_mode(self):
         config = self._load(
             {

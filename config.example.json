@@ -1,7 +1,8 @@
 {
   "wifi": {
     "ssid": "",
-    "password": ""
+    "password": "",
+    "hidden": false
   },
   "amms": {
     "transport": "mqtt",
@@ -46,6 +47,15 @@
     "reconnect_interval_seconds": 15,
     "led_pin": 2,
     "led_active_low": false,
-    "led_pulse_ms": 100
+    "led_pulse_ms": 100,
+    "serial_interval_seconds": 10
+  },
+  "clock": {
+    "ntp_enabled": true,
+    "ntp_server": "pool.ntp.org",
+    "timezone": "Europe/Rome",
+    "utc_offset_minutes": 60,
+    "dst_auto": true,
+    "sync_interval_seconds": 3600
   }
 }

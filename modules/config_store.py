@@ -7,6 +7,7 @@ DEFAULT_CONFIG = {
     "wifi": {
         "ssid": "",
         "password": "",
+        "hidden": False,
     },
     "amms": {
         "enabled": False,
@@ -44,7 +45,12 @@ DEFAULT_CONFIG = {
         "upload_interval_seconds": 10,
         "utc_offset_minutes": 60,
     },
+    "clock": {
+        "ntp_enabled": True, "ntp_server": "pool.ntp.org", "timezone": "Europe/Rome",
+        "utc_offset_minutes": 60, "dst_auto": True, "sync_interval_seconds": 3600,
+    },
     "runtime": {
+        "serial_interval_seconds": 10,
         "mode": "ap",
         "ap_ssid": "Bresser Gateway",
         "poll_interval_ms": 25,
@@ -91,6 +97,10 @@ def load(path=CONFIG_PATH):
         and stored_amms.get("token")
     ):
         config["amms"]["auth_mode"] = "bearer"
+    if (isinstance(stored_amms, dict) and 'enabled' not in stored_amms
+            and config['runtime'].get('mode', 'ap') != 'ap' and is_provisioned(config)):
+        # Older gateway mode sent AMMS unconditionally once provisioned.
+        config['amms']['enabled'] = True
     return config
 
 

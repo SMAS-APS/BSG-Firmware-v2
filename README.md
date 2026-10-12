@@ -25,21 +25,57 @@ dashboard e nell'API `/api/readings`. La ricezione di pacchetti reali, la
 stabilita e il captive portal vanno verificati durante le sessioni di test;
 la presenza del modulo RF non equivale alla validazione completa del sistema.
 
-## Configurazione dalla dashboard
+## Configurazione dal pannello di controllo
 
-La prima sezione di **http://192.168.4.1** configura Wi-Fi e Wunderground,
-seguiti da AMMS e MQTT/TLS. Non servono modifiche ai sorgenti o a `/config.json`.
+La dashboard scura, ispirata alle console SALZEN e Power Monitor, è disponibile
+su **http://192.168.4.1** nell'AP e sull'indirizzo IP della scheda nella rete del router.
+Il server si avvia in tutte le modalità, anche senza credenziali remote o con errore RF.
 
-1. Collegarsi all'AP **Bresser Gateway**.
-2. Inserire SSID e password del router; l'AP resta attivo anche con il router connesso.
-3. Abilitare Wunderground se desiderato e inserire Station ID, Station Key,
-   RapidFire/PWS, intervallo e offset UTC locale (60 in inverno, 120 in estate in Italia).
-4. Abilitare AMMS se desiderato; scegliere **HTTPS** oppure **MQTT/TLS**.
-   Configurare ID stazione, ID chiave, chiave HMAC da 32 byte in esadecimale
-   oppure token legacy per HTTPS. Impostare URL, timeout e intervallo AMMS.
-5. Per MQTT impostare host, porta, keepalive e incollare il certificato CA PEM,
-   oppure indicare il percorso di una CA gia presente sulla scheda.
-6. Premere **Salva e riavvia**, quindi riconnettersi all'AP.
+- **Stato:** grafici esclusivamente per le misure numeriche trasmesse dalla stazione
+  selezionata. Modelli con meno sensori non mostrano schede vuote. Espansione, tooltip,
+  zoom, scorrimento ed esportazione CSV. La direzione del vento usa una rosa dei venti
+  con provenienza, nome del vento e frequenza dei settori nella vista espansa; massimo 360 campioni per ciascuna delle ultime
+  8 stazioni nella sessione del browser. Lo storico non è persistente sulla flash.
+- **Wi-Fi:** scansione in background di tutti gli access point 2,4 GHz rilevati,
+  icone Google Material locali, qualità stimata dal RSSI e potenza ricevuta in dBm.
+  Le reti aperte selezionate eliminano la password precedente. Le reti nascoste
+  possono richiedere l'SSID manuale; anche gli spazi del nome sono conservati.
+  Credenziali salvate senza disabilitare l'AP, applicate dopo il riavvio.
+- **Impostazioni:** token AMMS/WU, HTTPS o MQTT/TLS, CA PEM, frequenze, monitor seriale,
+  riavvio e orologio. I segreti non vengono restituiti al browser; lasciarli vuoti
+  conserva quelli salvati. Il Wi-Fi e i servizi hanno pulsanti di salvataggio distinti.
+- **Terminale:** log applicativo limitato a 12.000 caratteri / 120 voci, autoscroll,
+  frequenza output, cronologia comandi. `help`, `status`, `sensors`, `stations`,
+  `battery`, `wifi`, `wifi scan`, `radio`, `heap`, `uptime`, `time`, `ntp sync`,
+  `serial 0|1|5|10|30|60`, `monitor`, `clear`, `restart`/`reboot`/`reset`, `exit`.
+  Errori e diagnostica sono nel terminale; non esiste una scheda Alert.
+
+La batteria della stazione usa il flag RF reale **OK/LOW**, distinto per sensore,
+con indicazione dell'età dell'ultimo dato. I protocolli 5/6/7-in-1 supportati non
+forniscono percentuale né tensione: non vengono ricavate da questo flag.
+Vedere la [documentazione del decoder di riferimento](https://github.com/matthias-bs/BresserWeatherSensorReceiver#home-assistant).
+
+In **Data e ora** si configurano server NTP, abilitazione, intervallo e fuso.
+`Europe/Rome` gestisce automaticamente CET/CEST; disponibili anche Paris, Berlin,
+Madrid, London, Athens, UTC e un offset personalizzato fisso. La RTC conserva UTC;
+il fuso viene applicato alla visualizzazione e al conteggio giornaliero della pioggia.
+Le regole europee usano l'ultima domenica di marzo e ottobre, alle 01:00 UTC.
+L'orologio viene sincronizzato in background anche se AMMS/WU sono disabilitati;
+serve una connessione Internet sul Wi-Fi STA. Solo AP: dashboard sempre utilizzabile,
+orologio indicato come non sincronizzato finché non è disponibile un'ora valida.
+Orologio e frequenze si applicano senza riavvio, Wi-Fi e servizi con riavvio.
+
+Per un'anteprima desktop, senza scritture sulla scheda né sulla configurazione:
+
+```sh
+python tools/preview_dashboard.py --model 5
+```
+
+Aprire **http://127.0.0.1:8765**. L'anteprima indica esplicitamente che i dati
+sono simulati. `--model 7` aggiunge UV e luminosità. Interrompere con Ctrl+C.
+Le icone SVG Google Material sono incluse nel sorgente per funzionare nell'AP
+senza Internet; licenza in `MATERIAL-ICONS-LICENSE.txt` e provenienza in
+`MATERIAL-ICONS-NOTICES.md`.
 
 AMMS e Wunderground hanno abilitazioni indipendenti. HTTPS e MQTT sono
 trasporti alternativi dello stesso client AMMS; il formato e i topic originali
@@ -51,7 +87,7 @@ la password della nuova rete; per una rete aperta usare la relativa casella.
 
 Il salvataggio sostituisce atomicamente il JSON. Un nuovo PEM usa un file CA
 separato per conservare il certificato precedente se il salvataggio fallisce.
-Gli invii HTTPS/MQTT e NTP sono eseguiti in un worker; radio, DNS e HTTP
+Gli invii HTTPS/MQTT, la sincronizzazione NTP e la scansione Wi-Fi usano worker separati; radio, DNS e HTTP
 continuano nel ciclo principale. Gli invii attendono rete e orologio validi.
 La prima **stazione meteo** riconosciuta dopo il riavvio viene scelta per gli
 invii; gli altri ID restano visibili sulla seriale e nell'API e non vengono

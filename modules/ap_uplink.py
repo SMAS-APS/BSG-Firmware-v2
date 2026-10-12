@@ -65,11 +65,9 @@ class Uplink:
         client = None
         try:
             from main_app import _build_client, _build_weather_underground, _payload_from_reading
-            import ntptime
             wu_client, tracker = _build_weather_underground(self.config)
             last_amms = None
             last_wu = None
-            last_ntp = None
             latest = None
             rain = (None, None)
             while self.running:
@@ -81,13 +79,6 @@ class Uplink:
                         self.amms_status = "in attesa del Wi-Fi"
                     time.sleep_ms(500)
                     continue
-                if last_ntp is None or time.ticks_diff(now, last_ntp) >= 3600000:
-                    last_ntp = now
-                    try:
-                        ntptime.settime()
-                        print("Orologio sincronizzato via NTP")
-                    except Exception:
-                        last_ntp = time.ticks_add(now, -3540000)
                 if time.gmtime()[0] < 2024:
                     if self.wu_enabled:
                         self.status = "in attesa sincronizzazione NTP"
@@ -101,6 +92,8 @@ class Uplink:
                 if pending:
                     latest = pending
                     if tracker:
+                        from station_clock import offset_minutes
+                        tracker.utc_offset_minutes = offset_minutes(self.config.get("clock", {}))[0]
                         rain = tracker.update(pending[0], int(time.time()))
                 if latest is None or time.ticks_diff(now, latest[1]) > 120000:
                     time.sleep_ms(250)

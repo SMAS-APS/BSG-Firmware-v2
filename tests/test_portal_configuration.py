@@ -26,10 +26,11 @@ class ConfigurationTests(unittest.TestCase):
                     secret_hex="", token="", url="https://example.org/api/data/point", mqtt_host="broker.example.org",
                     mqtt_port="8883", mqtt_keepalive="45", mqtt_ca_cert="/mqtt-ca.crt", timeout_seconds="10", amms_interval="15")
 
-    def test_form_precedes_weather_and_has_every_original_remote_setting(self):
+    def test_dashboard_has_separate_pages_and_every_original_remote_setting(self):
         cfg = self.config()
         html = wifi._dashboard(cfg)
-        self.assertLess(html.index('name="ssid"'), html.index('id="temperature"'))
+        for page in ("status", "wifi", "config", "terminal"):
+            self.assertIn('id="page-%s"' % page, html)
         for name in self.form():
             self.assertIn('name="%s"' % name, html)
         self.assertIn('name="mqtt_ca_pem"', html)
