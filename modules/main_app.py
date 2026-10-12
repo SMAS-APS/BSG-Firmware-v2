@@ -3,19 +3,10 @@ import time
 
 import bresser_native
 
-from amms import (
-    AMMSClient,
-    AMMSMQTTClient,
-    AMMSPayload,
-    HMACAuth,
-    WeatherUndergroundClient,
-)
-from amms.transports.ca_cert import AMAZON_ROOT_CA_1
-from amms.transports.micropython_http import get_text, post_json
 from config_store import is_provisioned, load, validate_weather_underground
-from mqtt_transport import MicroPythonMQTTPublisher
+from bsg_runtime import FIRMWARE_BOARD
 import wifi_manager
-from wu_support import RainTracker, canonical_sensor_values
+from wu_support import canonical_sensor_values
 
 
 def _sync_clock():
@@ -37,6 +28,10 @@ def _clock_is_valid():
 
 
 def _init_radio(radio):
+    if FIRMWARE_BOARD == "ESP32-WROOM-32":
+        for name in ("sck", "mosi", "miso", "cs", "reset", "dio0"):
+            if 6 <= int(radio[name]) <= 11:
+                raise ValueError("GPIO6-11 riservati alla flash WROOM-32: aggiornare radio in /config.json")
     bresser_native.init(
         spi_host=int(radio["spi_host"]),
         sck=int(radio["sck"]),
@@ -52,6 +47,7 @@ def _init_radio(radio):
 
 
 def _payload_from_reading(reading):
+    from amms import AMMSPayload
     payload = AMMSPayload()
     for name, value in canonical_sensor_values(reading).items():
         payload.set_sensor(name, value)
@@ -59,6 +55,9 @@ def _payload_from_reading(reading):
 
 
 def _build_client(amms_config):
+    from amms import AMMSClient, AMMSMQTTClient, HMACAuth
+    from amms.transports.micropython_http import post_json
+    from mqtt_transport import MicroPythonMQTTPublisher
     transport = amms_config.get("transport", "http").lower()
     if transport == "mqtt":
         if amms_config.get("auth_mode") != "hmac-sha256":
@@ -89,10 +88,14 @@ def _build_client(amms_config):
 
 
 def _weather_underground_get(url, headers, timeout):
+    from amms.transports.ca_cert import AMAZON_ROOT_CA_1
+    from amms.transports.micropython_http import get_text
     return get_text(url, headers, timeout, ca_cert=AMAZON_ROOT_CA_1)
 
 
 def _build_weather_underground(config):
+    from amms import WeatherUndergroundClient
+    from wu_support import RainTracker
     wu_config = config["weather_underground"]
     if not wu_config.get("enabled"):
         return None, None
@@ -112,6 +115,18 @@ def _build_weather_underground(config):
 
 def run():
     config = load()
+    if config["runtime"].get("mode", "ap") == "ap":
+        radio_error = ""
+        try:
+            _init_radio(config["radio"])
+        except Exception as exc:
+            radio_error = str(exc)
+            print("Errore ricevitore:", radio_error)
+        try:
+            wifi_manager.run_ap(config, bresser_native, radio_error)
+        finally:
+            bresser_native.deinit()
+        return
     if not is_provisioned(config):
         print("Configurazione incompleta")
         wifi_manager.provision(config)

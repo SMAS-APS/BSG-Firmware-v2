@@ -11,12 +11,12 @@ constexpr std::size_t kRadioFrameSize = 27;
 
 struct ReceiverConfig {
   int spi_host = SPI2_HOST;
-  int sck = 12;
-  int mosi = 11;
-  int miso = 13;
-  int cs = 10;
+  int sck = 18;
+  int mosi = 23;
+  int miso = 19;
+  int cs = 27;
   int reset = 14;
-  int dio0 = 6;
+  int dio0 = 26;
   std::uint32_t frequency_hz = 868300000;
   std::int32_t frequency_offset_hz = 0;
 };

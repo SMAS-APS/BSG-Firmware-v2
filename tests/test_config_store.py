@@ -3,6 +3,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 MODULES = pathlib.Path(__file__).resolve().parents[1] / "modules"
@@ -11,20 +12,36 @@ sys.path.insert(0, str(MODULES))
 import config_store
 
 
-BOARD_V2_RADIO_CONFIG = {
+WROOM32_RADIO_CONFIG = {
     "spi_host": 1,
-    "sck": 12,
-    "mosi": 11,
-    "miso": 13,
-    "cs": 10,
+    "sck": 18,
+    "mosi": 23,
+    "miso": 19,
+    "cs": 27,
     "reset": 14,
-    "dio0": 6,
+    "dio0": 26,
     "frequency_hz": 868_300_000,
     "frequency_offset_hz": 0,
 }
 
 
 class ConfigStoreTests(unittest.TestCase):
+    def test_save_replaces_previous_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "config.json"
+            path.write_text('{"previous":true}')
+            config_store.save({"wifi": {"ssid": "new"}}, str(path))
+            self.assertEqual(json.loads(path.read_text()), {"wifi": {"ssid": "new"}})
+
+    def test_failed_save_preserves_previous_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "config.json"
+            path.write_text('{"previous":true}')
+            with patch.object(config_store, "replace_file", side_effect=OSError("flash error")):
+                with self.assertRaises(OSError):
+                    config_store.save({"new": True}, str(path))
+            self.assertEqual(json.loads(path.read_text()), {"previous": True})
+            self.assertTrue(path.with_name("config.json.tmp").is_file())
     def _load(self, document):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "config.json"
@@ -51,12 +68,12 @@ class ConfigStoreTests(unittest.TestCase):
             config["weather_underground"]["upload_interval_seconds"], 10
         )
 
-    def test_board_v2_radio_defaults_match_example(self):
-        self.assertEqual(config_store.DEFAULT_CONFIG["radio"], BOARD_V2_RADIO_CONFIG)
+    def test_wroom32_radio_defaults_match_example(self):
+        self.assertEqual(config_store.DEFAULT_CONFIG["radio"], WROOM32_RADIO_CONFIG)
         example_path = MODULES.parent / "config.example.json"
         with example_path.open("r", encoding="utf-8") as stream:
             example = json.load(stream)
-        self.assertEqual(example["radio"], BOARD_V2_RADIO_CONFIG)
+        self.assertEqual(example["radio"], WROOM32_RADIO_CONFIG)
 
     def test_hmac_requires_all_credentials(self):
         config = config_store._copy_defaults()

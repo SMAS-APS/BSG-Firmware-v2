@@ -23,12 +23,12 @@ DEFAULT_CONFIG = {
     },
     "radio": {
         "spi_host": 1,
-        "sck": 12,
-        "mosi": 11,
-        "miso": 13,
-        "cs": 10,
+        "sck": 18,
+        "mosi": 23,
+        "miso": 19,
+        "cs": 27,
         "reset": 14,
-        "dio0": 6,
+        "dio0": 26,
         "frequency_hz": 868_300_000,
         "frequency_offset_hz": 0,
     },
@@ -41,6 +41,8 @@ DEFAULT_CONFIG = {
         "utc_offset_minutes": 60,
     },
     "runtime": {
+        "mode": "ap",
+        "ap_ssid": "Bresser Gateway",
         "poll_interval_ms": 25,
         "reconnect_interval_seconds": 15,
     },
@@ -83,16 +85,14 @@ def save(config, path=CONFIG_PATH):
     with open(temporary_path, "w") as stream:
         json.dump(config, stream)
 
-    try:
-        import os
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        os.rename(temporary_path, path)
-    except Exception:
-        # Mantiene il file temporaneo per non perdere i dati in caso di errore flash.
-        raise
+    replace_file(temporary_path, path)
+
+
+def replace_file(source, target):
+    # LittleFS (ESP32) sostituisce atomicamente con rename. Su CPython/Windows
+    # serve replace: in entrambi i casi non eliminiamo prima il vecchio file.
+    import os
+    getattr(os, "replace", os.rename)(source, target)
 
 
 def _file_exists(path):

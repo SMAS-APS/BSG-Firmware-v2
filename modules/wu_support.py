@@ -2,6 +2,7 @@
 
 import json
 import time
+from config_store import replace_file
 
 
 STATE_VERSION = 1
@@ -41,12 +42,7 @@ def _atomic_write(path, value):
     temporary_path = path + ".tmp"
     with open(temporary_path, "w") as stream:
         json.dump(value, stream)
-    import os
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-    os.rename(temporary_path, path)
+    replace_file(temporary_path, path)
 
 
 class RainTracker:

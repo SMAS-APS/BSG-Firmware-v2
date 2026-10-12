@@ -4,3 +4,14 @@ config.json
 **/__pycache__/
 *.py[cod]
 .idea/
+
+.pio/
+*.bin
+*.elf
+*.map
+*.mpy
+*.uf2
+config.json.tmp
+wu-rain-state.json*
+mqtt-ca.crt
+.vscode/
