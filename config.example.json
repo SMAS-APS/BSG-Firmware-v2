@@ -18,12 +18,12 @@
   },
   "radio": {
     "spi_host": 1,
-    "sck": 12,
-    "mosi": 11,
-    "miso": 13,
-    "cs": 10,
+    "sck": 18,
+    "mosi": 23,
+    "miso": 19,
+    "cs": 27,
     "reset": 14,
-    "dio0": 6,
+    "dio0": 26,
     "frequency_hz": 868300000,
     "frequency_offset_hz": 0
   },
@@ -36,6 +36,8 @@
     "utc_offset_minutes": 60
   },
   "runtime": {
+    "mode": "ap",
+    "ap_ssid": "Bresser Gateway",
     "poll_interval_ms": 25,
     "reconnect_interval_seconds": 15
   }

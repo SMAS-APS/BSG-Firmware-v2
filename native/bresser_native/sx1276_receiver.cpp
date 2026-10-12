@@ -7,6 +7,7 @@
 #include "esp_err.h"
 #include "esp_idf_version.h"
 #include "esp_rom_sys.h"
+#include "soc/soc_caps.h"
 
 namespace bresser {
 namespace {
@@ -66,7 +67,7 @@ ReceiverResult Sx1276Receiver::begin(const ReceiverConfig& config) {
 
   const std::int64_t tuned_frequency =
       static_cast<std::int64_t>(config.frequency_hz) + config.frequency_offset_hz;
-  if (config.spi_host < SPI2_HOST || config.spi_host >= SPI_HOST_MAX ||
+  if (config.spi_host < SPI2_HOST || config.spi_host >= SOC_SPI_PERIPH_NUM ||
       !GPIO_IS_VALID_OUTPUT_GPIO(config.sck) ||
       !GPIO_IS_VALID_OUTPUT_GPIO(config.mosi) ||
       !GPIO_IS_VALID_GPIO(config.miso) ||

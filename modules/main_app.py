@@ -112,6 +112,18 @@ def _build_weather_underground(config):
 
 def run():
     config = load()
+    if config["runtime"].get("mode", "ap") == "ap":
+        radio_error = ""
+        try:
+            _init_radio(config["radio"])
+        except Exception as exc:
+            radio_error = str(exc)
+            print("Errore ricevitore:", radio_error)
+        try:
+            wifi_manager.run_ap(config, bresser_native, radio_error)
+        finally:
+            bresser_native.deinit()
+        return
     if not is_provisioned(config):
         print("Configurazione incompleta")
         wifi_manager.provision(config)
