@@ -2,5 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/external/AMMSUtils" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/vendor/micropython/lib/berkeley-db-1.xx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/vendor/micropython/lib/mbedtls" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/vendor/micropython/lib/mbedtls/framework" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/vendor/micropython/lib/micropython-lib" vcs="Git" />
   </component>
 </project>
