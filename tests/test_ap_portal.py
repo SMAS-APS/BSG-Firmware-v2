@@ -70,6 +70,7 @@ class APPortalTests(unittest.TestCase):
     def test_radio_dns_and_http_are_served_in_the_same_loop(self):
         server, dns, client = Mock(), Mock(), Mock()
         station, ap = Mock(), Mock()
+        station.isconnected.return_value = False
         server.accept.return_value = (client, ("192.168.4.2", 1234))
         dns.recvfrom.return_value = (question(), ("192.168.4.2", 5678))
         client.recv.return_value = b"GET /api/readings HTTP/1.1\r\n\r\n"
@@ -122,9 +123,32 @@ class APPortalTests(unittest.TestCase):
         dns.close.assert_called_once()
         ap.active.assert_called_with(False)
 
+    def test_http_memory_failure_keeps_ap_and_radio_running(self):
+        station, ap, server, dns, client, radio, poller = [Mock() for _ in range(7)]
+        station.isconnected.return_value = False
+        server.accept.return_value = (client, ('192.168.4.2', 1))
+        client.recv.return_value = b'GET / HTTP/1.1\r\n\r\n'
+        poller.poll.side_effect = [[(server, wifi.select.POLLIN)], [(client, wifi.select.POLLIN)], []]
+        radio.poll.side_effect = [None, None, None, KeyboardInterrupt()]
+        radio.diagnostics.return_value = {}
+        uplink = types.SimpleNamespace(status='disabilitato', amms_status='disabilitato', submit=Mock(), stop=Mock())
+        with patch.object(wifi.network, 'WLAN', side_effect=[station, ap]), patch.object(wifi.socket, 'socket', side_effect=[server,dns]), \
+             patch.object(wifi.select, 'poll', return_value=poller), patch.object(wifi.time, 'ticks_ms', return_value=100, create=True), \
+             patch.object(wifi.time, 'ticks_diff', side_effect=lambda a,b:a-b, create=True), patch.object(wifi, 'AutoReceiver', return_value=radio), \
+             patch.object(wifi, 'ReceiveLED'), patch.object(wifi, 'Uplink', return_value=uplink), \
+             patch.object(wifi, '_ap_response', side_effect=MemoryError()), patch('builtins.print') as output:
+            with self.assertRaises(KeyboardInterrupt):
+                wifi.run_ap({'runtime': {}}, radio)
+        self.assertEqual(radio.poll.call_count, 4)
+        client.close.assert_called_once()
+        self.assertTrue(any('Memoria insufficiente' in str(call.args[0]) for call in output.call_args_list))
+        # Shutdown occurs only on the later deliberate KeyboardInterrupt.
+        ap.active.assert_called_with(False)
+
     def test_unrecognized_frame_blinks_led_reports_error_and_keeps_receiving(self):
         server, dns, client = Mock(), Mock(), Mock()
         station, ap = Mock(), Mock()
+        station.isconnected.return_value = False
         server.accept.return_value = (client, ("192.168.4.2", 1))
         client.recv.return_value = b"GET /api/readings HTTP/1.1\r\n\r\n"
         client.send.side_effect = lambda data: len(data)

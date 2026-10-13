@@ -38,6 +38,7 @@ def monitor(device, restart=True):
         if restart:
             print("Riavvio Python dopo la connessione: versione e avvio saranno visibili.", flush=True)
             restart_python(port)
+        print("Digita config e Invio per configurare il Wi-Fi: prima SSID, poi password (nascosta).", flush=True)
         console = Console()
         console.enter()
         while True:

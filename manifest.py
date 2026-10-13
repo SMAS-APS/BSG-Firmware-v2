@@ -15,6 +15,8 @@ freeze("modules", (
     "dashboard.py",
     "dashboard_service.py",
     "station_clock.py",
+    "wifi_recovery.py",
+    "serial_commands.py",
 ))
 
 freeze("external/AMMSUtils", (

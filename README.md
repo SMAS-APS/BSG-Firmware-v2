@@ -93,6 +93,31 @@ La prima **stazione meteo** riconosciuta dopo il riavvio viene scelta per gli
 invii; gli altri ID restano visibili sulla seriale e nell'API e non vengono
 mescolati nello stesso upload. Dati piu vecchi di 120 secondi non vengono inviati.
 
+## Recupero Wi-Fi dalla seriale
+
+Aprire il monitor a **115200 baud** (`python bsg.py monitor --port COM3`,
+sostituendo la porta effettiva) e digitare **config** seguito da Invio.
+Il firmware richiede prima **SSID**, poi **password**; password vuota significa rete
+aperta. Il nome può appartenere anche a una rete nascosta. La password viene
+mascherata e non viene copiata nel registro del terminale. Il salvataggio conserva
+AMMS/WU e forza la connessione al router **senza riavviare la scheda**.
+Al successo la seriale mostra l'IP della scheda sulla rete del router.
+Il comando funziona anche da altri terminali seriali: lettura non bloccante nel
+ciclo del firmware. `help` mostra gli altri comandi, Ctrl-C interrompe l'applicazione.
+Aggiornare tutti i moduli Python con `bsg.py deploy` prima di usarlo su immagini
+precedenti; una modifica GitHub da sola non aggiorna il filesystem dell'ESP32.
+
+L'AP viene avviato aperto sul canale 1, con massimo 4 client; in modalità AP + STA
+il canale segue quello del router quando viene stabilita la connessione.
+La connessione automatica attende 10 secondi all'avvio. Tentativi falliti usano
+intervalli crescenti e vengono sospesi quando qualcuno è collegato all'AP o durante
+una scansione; `config` forza comunque il tentativo esplicito. Il driver non effettua
+riconnessioni infinite in parallelo. La seriale segnala stato e variazioni di canale.
+Errori per singola richiesta HTTP, inclusa memoria insufficiente, chiudono solo
+quella richiesta e lasciano AP, ricevitore e comandi seriali in esecuzione.
+Queste protezioni non sostituiscono il registro hardware per diagnosticare reset,
+alimentazione insufficiente o problemi del driver Wi-Fi del PC.
+
 ## Autoriconoscimento e diagnostica RF
 
 | Famiglia radio | Varianti decodificate |

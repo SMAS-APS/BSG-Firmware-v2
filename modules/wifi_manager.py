@@ -2,6 +2,8 @@ import socket
 import time
 import json
 import select
+import sys
+import gc
 
 import network
 
@@ -486,7 +488,7 @@ def run_ap(config, radio, radio_error=""):
     ap = network.WLAN(AP_IF)
     ap.active(True)
     ap.ifconfig((AP_IP, "255.255.255.0", AP_IP, AP_IP))
-    ap.config(ssid=config["runtime"].get("ap_ssid", "Bresser Gateway"), security=0)
+    ap.config(ssid=config["runtime"].get("ap_ssid", "Bresser Gateway"), security=0, channel=1, max_clients=4)
     server = socket.socket()
     dns = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     clients = {}
@@ -512,6 +514,11 @@ def run_ap(config, radio, radio_error=""):
     from dashboard_service import DashboardService
     service = DashboardService(config, wlan, state)
     service.radio = radio
+    from wifi_recovery import WifiRecovery
+    from serial_commands import SerialCommands
+    recovery = WifiRecovery(config, wlan, ap)
+    serial_commands = SerialCommands(config, recovery, service)
+    serial_input = getattr(sys.stdin, 'buffer', sys.stdin)
     uplink = Uplink(config, wlan)
     started = time.ticks_ms()
     uptime_ms = 0
@@ -537,6 +544,12 @@ def run_ap(config, radio, radio_error=""):
         dns.setblocking(False)
         poller.register(server, select.POLLIN)
         poller.register(dns, select.POLLIN)
+        try:
+            poller.register(serial_input, select.POLLIN)
+            print('Comandi seriali pronti: config per impostare SSID e password; help per i comandi.')
+        except (OSError, TypeError):
+            serial_input = None
+            print('Ingresso seriale non disponibile su questa piattaforma')
         print("AP:", config["runtime"].get("ap_ssid", "Bresser Gateway"))
         print("Captive portal: http://%s | seriale 115200 baud" % AP_IP)
         print("Autoriconoscimento Bresser 5-in-1 / 6-in-1 / 7-in-1 e varianti; 868.3 MHz FSK")
@@ -557,17 +570,8 @@ def run_ap(config, radio, radio_error=""):
                     state["core_temperature"] = None
             if led:
                 led.tick(now)
-            if wifi.get("ssid"):
-                connected = wlan.isconnected()
-                state["wifi_status"] = "connesso" if connected else "connessione in corso"
-                if not connected and not service.scanning and (last_connect is None or time.ticks_diff(now, last_connect) >= 30000):
-                    last_connect = now
-                    try:
-                        wlan.disconnect()
-                        wlan.connect(wifi["ssid"], wifi.get("password", ""))
-                        print("Connessione Wi-Fi a", wifi["ssid"], "| AP sempre attivo")
-                    except OSError:
-                        state["wifi_status"] = "errore connessione"
+            wifi = config.get("wifi", {})
+            state["wifi_status"] = recovery.tick(now, service.scanning)
             state["wu_status"] = uplink.status
             state["amms_status"] = uplink.amms_status
             if not radio_error:
@@ -579,7 +583,8 @@ def run_ap(config, radio, radio_error=""):
                         if reading.get("error"):
                             state["unrecognized"] += 1
                             state["error"] = reading["error"]
-                            print("ERRORE RF:", json.dumps(reading))
+                            if not serial_commands.configuring:
+                                print("ERRORE RF:", json.dumps(reading))
                             service.log("ERRORE RF: " + json.dumps(reading))
                         else:
                             state["error"] = ""
@@ -601,7 +606,8 @@ def run_ap(config, radio, radio_error=""):
                             state["received"] += 1
                             last_reading = now
                             state["age_seconds"] = 0
-                            print("Ricevuto:", json.dumps(reading))
+                            if not serial_commands.configuring:
+                                print("Ricevuto:", json.dumps(reading))
                             service.log("Ricevuto: " + json.dumps(reading))
                             uplink.submit(reading)
                 except Exception as exc:
@@ -612,7 +618,7 @@ def run_ap(config, radio, radio_error=""):
                 state["stations"][key]["age_seconds"] = time.ticks_diff(now, seen) // 1000
             if last_reading is not None:
                 state["age_seconds"] = time.ticks_diff(now, last_reading) // 1000
-            if service.monitor_interval and (last_report is None or time.ticks_diff(now, last_report) >= service.monitor_interval * 1000):
+            if not serial_commands.configuring and service.monitor_interval and (last_report is None or time.ticks_diff(now, last_report) >= service.monitor_interval * 1000):
                 last_report = now
                 print("Stato firmware %s | RF: validi=%d errori=%d ultima=%s s | Wi-Fi: %s" % (
                     FIRMWARE_VERSION, state["received"], state["unrecognized"],
@@ -632,7 +638,12 @@ def run_ap(config, radio, radio_error=""):
                 if last_reading is None:
                     print("In ascolto: nessun pacchetto Bresser valido ricevuto finora")
             for sock, event in poller.poll(interval):
-                if sock == dns:
+                if sock is serial_input:
+                    try:
+                        serial_commands.feed(serial_input.read(1))
+                    except (OSError, ValueError):
+                        print('Errore ingresso seriale; ciclo AP mantenuto attivo')
+                elif sock == dns:
                     try:
                         packet, address = dns.recvfrom(512)
                         answer = _dns_reply(packet)
@@ -679,9 +690,18 @@ def run_ap(config, radio, radio_error=""):
                             continue
                         if sock in clients:
                             close_client(sock)
-                    except ValueError:
+                    except MemoryError:
                         if sock in clients:
                             close_client(sock)
+                        gc.collect()
+                        print('Memoria insufficiente per HTTP; AP e comandi seriali mantenuti attivi')
+                    except Exception as exc:
+                        # A failed page generation (including heap exhaustion) must not tear down the AP.
+                        print('Errore richiesta HTTP:', type(exc).__name__, '| AP e seriale ancora attivi')
+                        service.log('Errore HTTP: ' + type(exc).__name__)
+                        if sock in clients:
+                            close_client(sock)
+                        gc.collect()
             for client in list(clients):
                 if time.ticks_diff(time.ticks_ms(), clients[client][1]) > 3000:
                     close_client(client)
