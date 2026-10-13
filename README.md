@@ -1,4 +1,4 @@
-# BSG Firmware v2 - versione 0.2.0
+# BSG Firmware v2 - versione 0.2.1
 
 **Stato: test avanzato su ESP32-WROOM-32 con modulo RF collegato.**
 
@@ -7,7 +7,8 @@
 Questo repository contiene il firmware ESP32 del gateway Bresser con:
 
 - logica applicativa in MicroPython;
-- modalita AP permanente con captive portal, dashboard dati e output seriale;
+- dashboard precompilata sul PC e servita dalla flash, anche gzip, con cache ETag;
+- AP automatico di recupero con captive portal; si spegne quando il Wi-Fi e connesso;
 - configurazione Wi-Fi, AMMS, MQTT/TLS e Wunderground dalla dashboard AP;
 - upload opzionale Weather Underground PWS o RapidFire;
 - invio MQTT/TLS con payload JSON compatto e QoS 1;
@@ -107,14 +108,30 @@ ciclo del firmware. `help` mostra gli altri comandi, Ctrl-C interrompe l'applica
 Aggiornare tutti i moduli Python con `bsg.py deploy` prima di usarlo su immagini
 precedenti; una modifica GitHub da sola non aggiorna il filesystem dell'ESP32.
 
-L'AP viene avviato aperto sul canale 1, con massimo 4 client; in modalità AP + STA
-il canale segue quello del router quando viene stabilita la connessione.
+L'AP viene avviato aperto sul canale 1, con massimo 4 client. Quando la scheda
+si collega al router, l'AP e il DNS captive vengono spenti per liberare risorse.
+La dashboard resta disponibile sull'IP della scheda nella rete del router.
+Se la connessione viene persa, l'AP **Bresser Gateway** e il captive portal
+su **http://192.168.4.1** si riattivano automaticamente. Lo stesso avviene
+quando mancano le credenziali o la rete configurata non viene trovata.
 La connessione automatica attende 10 secondi all'avvio. Tentativi falliti usano
 intervalli crescenti e vengono sospesi quando qualcuno è collegato all'AP o durante
 una scansione; `config` forza comunque il tentativo esplicito. Il driver non effettua
 riconnessioni infinite in parallelo. La seriale segnala stato e variazioni di canale.
 Errori per singola richiesta HTTP, inclusa memoria insufficiente, chiudono solo
 quella richiesta e lasciano AP, ricevitore e comandi seriali in esecuzione.
+
+La versione 0.2.1 evita il rendering HTML sull'ESP32 e trasmette anche dati,
+configurazione pubblica e terminale come JSON progressivo. Il registro conserva
+al massimo 60 righe e 6000 caratteri. I campi dei servizi disabilitati non
+bloccano il salvataggio degli altri servizi; i campi segreti vuoti conservano
+le credenziali gia salvate. Gli aggiornamenti automatici del browser sono
+sospesi durante il salvataggio e il riavvio, poi riprendono alla riconnessione.
+
+`bsg.py deploy` genera gli asset Web HTML, gzip ed ETag tramite
+`tools/build_web_assets.py` e li installa insieme ai moduli Python. Anche le
+release OTA includono questi asset. Dopo un aggiornamento dell'interfaccia,
+usare Ctrl+F5 nel browser per ricaricare la dashboard.
 Queste protezioni non sostituiscono il registro hardware per diagnosticare reset,
 alimentazione insufficiente o problemi del driver Wi-Fi del PC.
 
@@ -357,13 +374,12 @@ USB/seriale; usare la pagina Web soltanto in un ambiente fisicamente controllato
 
 La versione 0.2.0 introduce due slot applicativi LittleFS (`/ota/a` e
 `/ota/b`). Il loader, il verificatore e il codice di recupero sono congelati
-nel firmware nativo e non fanno parte dei pacchetti aggiornabili.
+nel firmware nativo; il deploy USB li installa anche nella radice per le
+immagini BSG precedenti. Non fanno parte dei pacchetti aggiornabili via OTA.
 
-Per abilitare OTA su una scheda gia' installata occorre una sola volta:
+Per abilitare OTA su una scheda con MicroPython BSG compatibile basta:
 
 ```powershell
-python build_firmware.py build
-python bsg.py flash --port COM5
 python bsg.py deploy --port COM5
 ```
 

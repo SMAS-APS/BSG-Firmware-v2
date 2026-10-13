@@ -27,8 +27,22 @@ class DashboardService:
 
     def log(self, text):
         self.lines.append(str(text)[:1000])
-        while len(self.lines) > 120 or sum(len(line) for line in self.lines) > 12000:
+        while len(self.lines) > 60 or sum(len(line) for line in self.lines) > 6000:
             del self.lines[0]
+
+    def public_settings(self):
+        fields = {
+            'wifi': ('ssid', 'hidden'),
+            'weather_underground': ('enabled', 'station_id', 'mode', 'upload_interval_seconds', 'utc_offset_minutes'),
+            'amms': ('enabled', 'transport', 'auth_mode', 'station_id', 'key_id', 'url', 'timeout_seconds',
+                     'upload_interval_seconds', 'mqtt_host', 'mqtt_port', 'mqtt_keepalive', 'mqtt_ca_cert'),
+            'clock': tuple(DEFAULT_CLOCK),
+            'runtime': ('poll_interval_ms', 'serial_interval_seconds'),
+        }
+        result = {section: {name: self.config.get(section, {}).get(name) for name in names}
+                  for section, names in fields.items()}
+        result['wifi']['has_password'] = bool(self.config.get('wifi', {}).get('password'))
+        return result
 
     def scan(self):
         if self.scanning:
@@ -180,8 +194,10 @@ class DashboardService:
         except AttributeError:
             self.state['heap_free'] = None
         wifi = self.config.get('wifi', {})
-        net = dict(mode='AP + STA' if connected else 'AP', ssid=wifi.get('ssid', ''),
-                   ap_ssid=self.config['runtime'].get('ap_ssid', 'Bresser Gateway'), ap_ip='192.168.4.1')
+        ap_active = self.state.get('ap_active', not connected)
+        net = dict(mode=('AP + STA' if ap_active else 'STA') if connected else 'AP', ssid=wifi.get('ssid', ''),
+                   ap_active=ap_active, ap_ssid=self.config['runtime'].get('ap_ssid', 'Bresser Gateway'),
+                   ap_ip='192.168.4.1' if ap_active else None)
         if connected:
             try:
                 ip, mask, gateway, dns = self.wlan.ifconfig()

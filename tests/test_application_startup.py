@@ -12,6 +12,14 @@ import config_store
 
 
 class ApplicationStartupTests(unittest.TestCase):
+    def setUp(self):
+        # La salute OTA viene verificata separatamente, senza scrivere lo stato
+        # della scheda nel filesystem del PC durante i test di avvio.
+        runtime = types.SimpleNamespace(initialize_version=Mock(), mark=Mock(), start_guard=Mock())
+        ota_patch = patch.dict(sys.modules, {"ota_runtime": runtime})
+        ota_patch.start()
+        self.addCleanup(ota_patch.stop)
+
     def test_legacy_s3_pins_cannot_reconfigure_wroom_flash_gpio(self):
         radio = Mock()
         wifi = types.SimpleNamespace(run_ap=Mock())

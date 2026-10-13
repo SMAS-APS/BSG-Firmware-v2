@@ -68,6 +68,7 @@ class WifiRecoveryTests(unittest.TestCase):
         wlan.status.return_value = 0
         wlan.ifconfig.return_value = ('192.168.1.10', '', '', '')
         ap.config.return_value = 1
+        ap.active.return_value = True
         ap.status.return_value = []
         with patch.object(wifi.time, 'ticks_ms', return_value=0, create=True):
             recovery = WifiRecovery(cfg, wlan, ap, emit)
@@ -119,6 +120,64 @@ class WifiRecoveryTests(unittest.TestCase):
         self.tick(recovery, 70000)
         self.assertEqual(wlan.connect.call_count, 2)
         self.assertTrue(any('password rifiutata' in call.args[0] for call in output.call_args_list))
+
+    def test_connected_station_disables_ap_once_and_does_not_query_inactive_ap(self):
+        _, wlan, ap, output, recovery = self.make()
+        wlan.isconnected.return_value = True
+        self.tick(recovery, 1000)
+        self.tick(recovery, 2000)
+        self.assertFalse(recovery.ap_enabled)
+        ap.active.assert_called_with(False)
+        self.assertEqual(ap.active.call_args_list.count(((False,), {})), 1)
+        ap.config.assert_not_called()
+        ap.status.assert_not_called()
+        self.assertTrue(any('AP disattivato' in call.args[0] for call in output.call_args_list))
+
+    def test_connection_loss_restores_ap_and_reconnection_disables_it_again(self):
+        _, wlan, ap, _, recovery = self.make()
+        wlan.isconnected.return_value = True
+        self.tick(recovery, 1000)
+        wlan.isconnected.return_value = False
+        self.tick(recovery, 1001)
+        self.assertTrue(recovery.ap_enabled)
+        ap.active.assert_called_with(True)
+        ap.ifconfig.assert_called_with(('192.168.4.1', '255.255.255.0', '192.168.4.1', '192.168.4.1'))
+        self.assertEqual(ap.config.call_args_list[0].kwargs['ssid'], 'Bresser Gateway')
+        wlan.isconnected.return_value = True
+        self.tick(recovery, 1002)
+        self.assertFalse(recovery.ap_enabled)
+        ap.active.assert_called_with(False)
+
+    def test_missing_credentials_restore_ap_without_attempting_connection(self):
+        cfg, wlan, ap, _, recovery = self.make()
+        cfg['wifi']['ssid'] = ''
+        recovery.ap_enabled = False
+        self.tick(recovery, 10000)
+        self.assertTrue(recovery.ap_enabled)
+        self.assertEqual(recovery.status, 'non configurato')
+        ap.active.assert_called_with(True)
+        wlan.connect.assert_not_called()
+
+    def test_driver_error_restores_ap_after_station_connection(self):
+        _, wlan, ap, _, recovery = self.make()
+        wlan.isconnected.return_value = True
+        self.tick(recovery, 1000)
+        wlan.isconnected.side_effect = OSError('driver')
+        self.tick(recovery, 1001)
+        self.assertTrue(recovery.ap_enabled)
+        ap.active.assert_called_with(True)
+        self.assertEqual(recovery.status, 'errore connessione')
+
+    def test_forced_reconnect_restores_ap_before_disconnecting_station(self):
+        _, wlan, ap, _, recovery = self.make()
+        wlan.isconnected.return_value = True
+        self.tick(recovery, 1000)
+        events = []
+        ap.active.side_effect = lambda enabled: events.append(('ap', enabled))
+        wlan.disconnect.side_effect = lambda: events.append(('disconnect',))
+        recovery.request_connect()
+        self.tick(recovery, 1001)
+        self.assertEqual(events, [('ap', True), ('disconnect',)])
 
 
 if __name__ == '__main__':

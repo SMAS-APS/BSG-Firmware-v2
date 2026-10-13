@@ -269,63 +269,8 @@ def _escape(value):
 
 
 def _configuration_form(config):
-    config = config or {}
-    wifi = config.get("wifi", {})
-    wu = config.get("weather_underground", {})
-    return """<article><h2>Configurazione Wi-Fi e Weather Underground</h2>
-<form id="configuration" method="post" action="/save">
-<label>Nome rete Wi-Fi (SSID)<input name="ssid" maxlength="32" value="%s" autocomplete="off"></label>
-<label>Password Wi-Fi<input name="password" type="password" maxlength="64" placeholder="Vuoto: conserva la password della stessa rete" autocomplete="new-password"></label>
-<label><input type="checkbox" name="clear_wifi_password"> Rete Wi-Fi senza password</label>
-<h3>Weather Underground</h3>
-<label><input type="checkbox" name="wu_enabled" %s> Abilita invio dati</label>
-<label>ID stazione WU<input name="wu_station_id" maxlength="64" value="%s"></label>
-<label>Chiave stazione WU<input name="wu_station_key" type="password" maxlength="128" placeholder="Vuoto: conserva la chiave salvata" autocomplete="new-password"></label>
-<label>Modalità<select name="wu_mode"><option value="rapidfire" %s>RapidFire</option><option value="standard" %s>Invio standard PWS</option></select></label>
-<label>Intervallo invio (secondi, minimo 10)<input name="wu_interval" type="number" min="10" max="86400" value="%s"></label>
-<label>Scostamento UTC per pioggia giornaliera (minuti)<input name="wu_utc_offset" type="number" min="-720" max="840" value="%s"></label>
-%s
-<button type="submit">Salva e riavvia</button><p id="save_status" role="status"></p>
-</form><small>L'AP rimane disponibile mentre la scheda si collega al router.
-Password e chiave stazione già salvate non vengono mostrate. WU usa la prima stazione meteo rilevata dopo l'avvio.</small></article>""" % (
-        _escape(wifi.get("ssid", "")), "checked" if wu.get("enabled") else "",
-        _escape(wu.get("station_id", "")),
-        "selected" if wu.get("mode", "rapidfire") == "rapidfire" else "",
-        "selected" if wu.get("mode") == "standard" else "",
-        _escape(wu.get("upload_interval_seconds", 10)), _escape(wu.get("utc_offset_minutes", 60)),
-        _amms_form(config.get("amms", {})))
-
-
-def _amms_form(amms):
-    def value(name, default=""):
-        return _escape(amms.get(name, default))
-
-    return """<h3>AMMS e MQTT/TLS</h3>
-<label><input type="checkbox" name="amms_enabled" %s> Abilita invio ad AMMS</label>
-<label>Trasporto<select name="transport"><option value="http" %s>HTTPS AMMS</option><option value="mqtt" %s>MQTT/TLS AMMS</option></select></label>
-<label>Autenticazione<select name="auth_mode"><option value="hmac-sha256" %s>HMAC-SHA256</option><option value="bearer" %s>Token Bearer precedente (solo HTTPS)</option></select></label>
-<label>ID stazione AMMS / utente MQTT<input name="station_id" maxlength="64" value="%s"></label>
-<label>ID chiave HMAC<input name="key_id" maxlength="64" value="%s"></label>
-<label>Chiave HMAC / password MQTT (64 cifre esadecimali)<input type="password" name="secret_hex" maxlength="64" autocomplete="new-password" placeholder="Vuoto: conserva la chiave salvata"></label>
-<label>Token AMMS precedente<input type="password" name="token" maxlength="512" autocomplete="new-password" placeholder="Vuoto: conserva il token salvato"></label>
-<label>URL API AMMS<input name="url" type="url" maxlength="256" value="%s"></label>
-<label>Tempo massimo risposta AMMS (secondi)<input name="timeout_seconds" type="number" min="1" max="60" value="%s"></label>
-<label>Intervallo AMMS (secondi)<input name="amms_interval" type="number" min="1" max="86400" value="%s"></label>
-<label>Server MQTT<input name="mqtt_host" maxlength="253" value="%s"></label>
-<label>Porta MQTT/TLS<input name="mqtt_port" type="number" min="1" max="65535" value="%s"></label>
-<label>Mantenimento connessione MQTT (secondi)<input name="mqtt_keepalive" type="number" min="10" max="3600" value="%s"></label>
-<label>Percorso CA MQTT salvato<input name="mqtt_ca_cert" maxlength="96" value="%s"></label>
-<label>Certificato CA MQTT (PEM)<textarea name="mqtt_ca_pem" rows="7" maxlength="4096" placeholder="Vuoto: conserva il certificato esistente"></textarea></label>
-<small>MQTT mantiene i topic e il formato AMMS originali; richiede autenticazione per stazione e CA valida.
-HTTPS e MQTT sono due trasporti alternativi di AMMS. Wunderground può essere attivo contemporaneamente.</small>""" % (
-        "checked" if amms.get("enabled") else "",
-        "selected" if amms.get("transport") == "http" else "",
-        "selected" if amms.get("transport", "mqtt") == "mqtt" else "",
-        "selected" if amms.get("auth_mode", "hmac-sha256") == "hmac-sha256" else "",
-        "selected" if amms.get("auth_mode") == "bearer" else "",
-        value("station_id"), value("key_id"), value("url", "https://weather.iacca.ml/api/data/point"),
-        value("timeout_seconds", 15), value("upload_interval_seconds", 10),
-        value("mqtt_host", "weather.iacca.ml"), value("mqtt_port", 8883), value("mqtt_keepalive", 45), value("mqtt_ca_cert", "/mqtt-ca.crt"))
+    from dashboard_forms import configuration_form
+    return configuration_form(config)
 
 
 def _save_ap_configuration(config, form):
@@ -340,12 +285,12 @@ def _save_ap_configuration(config, form):
     wifi["ssid"] = ssid
     wu = candidate["weather_underground"]
     wu["enabled"] = form.get("wu_enabled") == "on"
-    wu["station_id"] = form.get("wu_station_id", "").strip()
+    wu["station_id"] = form.get("wu_station_id", wu.get("station_id", "")).strip()
     if form.get("wu_station_key"):
         wu["station_key"] = form["wu_station_key"]
-    wu["mode"] = form.get("wu_mode", "rapidfire")
-    wu["upload_interval_seconds"] = int(form.get("wu_interval", "10"))
-    wu["utc_offset_minutes"] = int(form.get("wu_utc_offset", "60"))
+    wu["mode"] = form.get("wu_mode", wu.get("mode", "rapidfire"))
+    wu["upload_interval_seconds"] = int(form.get("wu_interval", wu.get("upload_interval_seconds", 10)))
+    wu["utc_offset_minutes"] = int(form.get("wu_utc_offset", wu.get("utc_offset_minutes", 60)))
     if len(wu["station_id"]) > 64 or len(wu["station_key"]) > 128:
         raise ValueError("credenziali WU troppo lunghe")
     if wu["enabled"] and not ssid:
@@ -355,7 +300,10 @@ def _save_ap_configuration(config, form):
     amms["enabled"] = form.get("amms_enabled") == "on"
     for key in ("transport", "auth_mode", "station_id", "key_id", "url", "mqtt_host", "mqtt_ca_cert"):
         if key in form:
-            amms[key] = form[key].strip()
+            value = form[key].strip()
+            if key == "mqtt_ca_cert" and not value:
+                continue  # Blank optional path keeps the configured/default CA.
+            amms[key] = value
     for key in ("secret_hex", "token"):
         if form.get(key):
             amms[key] = form[key].strip()
@@ -363,7 +311,8 @@ def _save_ap_configuration(config, form):
     amms["mqtt_keepalive"] = int(form.get("mqtt_keepalive", str(amms.get("mqtt_keepalive", 45))))
     amms["timeout_seconds"] = int(form.get("timeout_seconds", str(amms.get("timeout_seconds", 15))))
     amms["upload_interval_seconds"] = int(form.get("amms_interval", str(amms.get("upload_interval_seconds", 10))))
-    cert_path = amms.get("mqtt_ca_cert", "/mqtt-ca.crt")
+    cert_path = amms.get("mqtt_ca_cert") or "/mqtt-ca.crt"
+    amms["mqtt_ca_cert"] = cert_path
     if not cert_path.startswith("/") or ".." in cert_path or not cert_path.endswith(".crt") or len(cert_path) > 96:
         raise ValueError("percorso certificato CA non valido")
     pem = form.get("mqtt_ca_pem", "").strip()
@@ -411,7 +360,108 @@ def _dashboard(config=None):
     return render(config or {}, _configuration_form(config), _escape)
 
 
-def _ap_response(request, state, config=None, service=None):
+class _HTTPStream:
+    def __init__(self, parts):
+        self.parts = iter(parts)
+        self.pending = None
+        self.offset = 0
+
+    def send(self, client):
+        if self.pending is None:
+            try:
+                self.pending = memoryview(next(self.parts))
+                self.offset = 0
+            except StopIteration:
+                return True
+        sent = client.send(self.pending[self.offset:])
+        if not sent:
+            return True
+        self.offset += sent
+        if self.offset == len(self.pending):
+            self.pending = None
+        return False
+
+    def close(self):
+        self.pending = None
+        close = getattr(self.parts, 'close', None)
+        if close:
+            close()
+
+
+def _open_asset(name):
+    for directory in sys.path:
+        try:
+            return open(directory.rstrip('/') + '/' + name, 'rb')
+        except OSError:
+            pass
+    filename = globals().get('__file__', '').replace('\\', '/')
+    if '/modules/' in filename:
+        return open(filename.rsplit('/modules/', 1)[0] + '/.pio/web/' + name, 'rb')
+    raise OSError(2, 'dashboard asset missing; repeat USB deploy')
+
+
+def _dashboard_parts(request):
+    with _open_asset('dashboard.etag') as version:
+        etag = b'W/"' + version.read(64) + b'"'
+    if b'if-none-match: ' + etag.lower() in request.lower():
+        yield b'HTTP/1.1 304 Not Modified\r\nCache-Control: no-cache\r\nVary: Accept-Encoding\r\nETag: ' + etag + b'\r\nConnection: close\r\n\r\n'
+        return
+    compressed = False
+    for line in request.lower().split(b'\r\n'):
+        if line.startswith(b'accept-encoding:') and b'gzip' in line:
+            compressed = True
+    with _open_asset('dashboard.html.gz' if compressed else 'dashboard.static.html') as source:
+        size = source.seek(0, 2)
+        source.seek(0)
+        header = ('HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n'
+                  'Content-Length: %d\r\nCache-Control: no-cache\r\nVary: Accept-Encoding\r\n'
+                  'Connection: close\r\n' % size).encode()
+        yield header + b'ETag: ' + etag + b'\r\n' + (b'Content-Encoding: gzip\r\n' if compressed else b'') + b'\r\n'
+        while True:
+            block = source.read(512)
+            if not block:
+                return
+            yield block
+
+
+def _iter_json(value):
+    if isinstance(value, dict):
+        yield b'{'
+        for index, (key, item) in enumerate(tuple(value.items())):
+            if index:
+                yield b','
+            yield json.dumps(key).encode('utf-8')
+            yield b':'
+            yield from _iter_json(item)
+        yield b'}'
+    elif isinstance(value, (list, tuple)):
+        yield b'['
+        for index, item in enumerate(tuple(value)):
+            if index:
+                yield b','
+            yield from _iter_json(item)
+        yield b']'
+    else:
+        yield json.dumps(value).encode('utf-8')
+
+
+def _json_parts(status, value):
+    yield ('HTTP/1.1 %s\r\nContent-Type: application/json\r\n'
+           'Cache-Control: no-store\r\nConnection: close\r\n\r\n' % status).encode()
+    buffer = bytearray()
+    for fragment in _iter_json(value):
+        buffer.extend(fragment)
+        if len(buffer) >= 512:
+            view = memoryview(buffer)
+            for offset in range(0, len(view), 512):
+                yield view[offset:offset + 512]
+            view = None
+            buffer = bytearray()
+    if buffer:
+        yield buffer
+
+
+def _ap_response(request, state, config=None, service=None, stream=False):
     line = request.split(b"\r\n", 1)[0].split()
     if len(line) != 3:
         raise ValueError("richiesta HTTP non valida")
@@ -439,7 +489,7 @@ def _ap_response(request, state, config=None, service=None):
                     service.scan()
                     result = {"message": "Scansione avviata"}
             elif line[0] == b"GET" and path == b"/api/terminal":
-                result = {"lines": service.lines[:]}
+                result = {"lines": service.lines}
             elif line[0] == b"GET" and path == b"/api/wifi/scan":
                 result = {"busy": service.scanning, "networks": service.networks, "message": service.scan_message}
             else:
@@ -448,6 +498,8 @@ def _ap_response(request, state, config=None, service=None):
             status, result = "400 Bad Request", {"message": str(exc)}
         except OSError:
             status, result = "500 Internal Server Error", {"message": "Salvataggio non riuscito; riprovare"}
+        if stream:
+            return _HTTPStream(_json_parts(status, result))
         body = json.dumps(result).encode("utf-8")
     elif line[0] == b"POST" and path == b"/save" and config is not None:
         status, kind = "200 OK", "application/json"
@@ -465,15 +517,28 @@ def _ap_response(request, state, config=None, service=None):
         status, kind, body = "405 Method Not Allowed", "text/plain", b"Solo GET"
         extra += "Allow: GET\r\n"
     elif path == b"/api/readings":
+        if stream:
+            return _HTTPStream(_json_parts('200 OK', state))
         status, kind = "200 OK", "application/json"
         body = json.dumps(state).encode("utf-8")
+    elif path == b'/api/settings' and service is not None:
+        status = '200 OK'
+        result = service.public_settings()
+        if stream:
+            return _HTTPStream(_json_parts(status, result))
+        kind, body = 'application/json', json.dumps(result).encode('utf-8')
+    elif path == b'/favicon.ico':
+        status, kind, body = '204 No Content', 'image/x-icon', b''
     elif path == b"/":
+        if stream:
+            return _HTTPStream(_dashboard_parts(request))
         status, kind = "200 OK", "text/html; charset=utf-8"
         body = _dashboard(config).encode("utf-8")
     else:
         # Include probe Android, Apple e Windows: rimangono captive.
         status, kind, body = "302 Found", "text/plain", b"Bresser Gateway"
-        extra += "Location: http://%s/\r\n" % AP_IP
+        target = AP_IP if state.get('ap_active', True) else state.get('network', {}).get('ip')
+        extra += "Location: %s\r\n" % ('http://%s/' % target if target else '/')
     header = "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\n%sConnection: close\r\n\r\n" % (
         status, kind, len(body), extra
     )
@@ -481,10 +546,12 @@ def _ap_response(request, state, config=None, service=None):
 
 
 def run_ap(config, radio, radio_error=""):
-    """AP permanente: DNS captive, HTTP e radio serviti nello stesso ciclo."""
+    """AP di recupero automatico; HTTP e radio restano attivi sulla rete STA."""
     wlan = station()
     wifi = config.get("wifi", {})
     wlan.active(bool(wifi.get("ssid")))
+    if wifi.get('ssid') and hasattr(network.WLAN, 'PM_NONE'):
+        wlan.config(pm=network.WLAN.PM_NONE)
     ap = network.WLAN(AP_IF)
     ap.active(True)
     ap.ifconfig((AP_IP, "255.255.255.0", AP_IP, AP_IP))
@@ -520,11 +587,9 @@ def run_ap(config, radio, radio_error=""):
     serial_commands = SerialCommands(config, recovery, service)
     serial_input = getattr(sys.stdin, 'buffer', sys.stdin)
     uplink = Uplink(config, wlan)
-    from ota_update import OTAUpdater
-    from ota_runtime import mark as mark_ota_health, status as ota_status, set_reporter, tick as ota_tick
-    updater = OTAUpdater(config)
-    set_reporter(updater.report_boot_result)
-    updater.start()
+    from ota_runtime import mark as mark_ota_health, status as ota_status, start_updater, tick as ota_tick
+    updater = start_updater(config)
+    gc.collect()
     started = time.ticks_ms()
     uptime_ms = 0
     previous_tick = started
@@ -537,13 +602,15 @@ def run_ap(config, radio, radio_error=""):
 
     def close_client(client):
         poller.unregister(client)
-        clients.pop(client, None)
+        item = clients.pop(client, None)
+        if item and isinstance(item[2], _HTTPStream):
+            item[2].close()
         client.close()
 
     try:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind(("0.0.0.0", 80))
-        server.listen(2)
+        server.listen(6)
         server.setblocking(False)
         dns.bind(("0.0.0.0", 53))
         dns.setblocking(False)
@@ -566,9 +633,32 @@ def run_ap(config, radio, radio_error=""):
             previous_tick = now
             state["uptime_seconds"] = uptime_ms // 1000
             interval = max(1, min(100, int(config["runtime"].get("poll_interval_ms", 25))))
+            wifi = config.get("wifi", {})
+            state["wifi_status"] = recovery.tick(now, service.scanning)
+            state["ap_active"] = recovery.ap_enabled
+            if not recovery.ap_enabled and dns is not None:
+                poller.unregister(dns)
+                dns.close()
+                dns = None
+                gc.collect()
+            elif recovery.ap_enabled and dns is None:
+                candidate_dns = None
+                try:
+                    candidate_dns = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    candidate_dns.bind(("0.0.0.0", 53))
+                    candidate_dns.setblocking(False)
+                    poller.register(candidate_dns, select.POLLIN)
+                    dns = candidate_dns
+                    candidate_dns = None
+                except OSError:
+                    if candidate_dns is not None:
+                        candidate_dns.close()
+                    print('DNS captive non disponibile; AP e HTTP attivi, riprovo')
             if last_state_refresh is None or time.ticks_diff(now, last_state_refresh) >= 1000:
                 last_state_refresh = now
                 service.tick(now, bool(wifi.get("ssid")) and wlan.isconnected())
+                state["ota"] = ota_status()
+                state["ota"]["agent_status"] = updater.status if updater else "disabilitato"
                 try:
                     import esp32
                     temperature = getattr(esp32, "mcu_temperature", None)
@@ -577,12 +667,8 @@ def run_ap(config, radio, radio_error=""):
                     state["core_temperature"] = None
             if led:
                 led.tick(now)
-            wifi = config.get("wifi", {})
-            state["wifi_status"] = recovery.tick(now, service.scanning)
             state["wu_status"] = uplink.status
             state["amms_status"] = uplink.amms_status
-            state["ota"] = ota_status()
-            state["ota"]["agent_status"] = updater.status
             if not radio_error:
                 try:
                     reading = receiver.poll()
@@ -663,10 +749,16 @@ def run_ap(config, radio, radio_error=""):
                 elif sock == server:
                     try:
                         client, _ = server.accept()
-                        if len(clients) >= 2:
+                        client.setblocking(False)
+                        if len(clients) >= 6:
+                            try:
+                                client.send(b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nRetry-After: 1\r\nConnection: close\r\n\r\n{"message":"Centralina occupata; riprovare tra pochi secondi."}')
+                            except OSError:
+                                pass
                             client.close()
                             continue
-                        client.setblocking(False)
+                        if hasattr(socket, 'TCP_NODELAY'):
+                            client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                         clients[client] = [bytearray(), now, None, 0]
                         poller.register(client, select.POLLIN)
                     except OSError:
@@ -682,15 +774,30 @@ def run_ap(config, radio, radio_error=""):
                                 close_client(sock)
                                 continue
                             item[0].extend(chunk)
-                            if len(item[0]) > 8192:
+                            item[1] = time.ticks_ms()
+                            buffered = sum(len(entry[0]) for entry in clients.values() if entry[0] is not None)
+                            if len(item[0]) > 8192 or buffered > 12288:
                                 close_client(sock)
                             elif _request_complete(item[0]):
-                                item[2] = _ap_response(bytes(item[0]), state, config, service)
+                                gc.collect()
+                                item[2] = _ap_response(bytes(item[0]), state, config, service, stream=True)
+                                item[0] = None
+                                # Every response uses bounded chunks; a slow page
+                                # must not block telemetry or configuration requests.
                                 poller.modify(sock, select.POLLOUT)
                         elif event & select.POLLOUT:
-                            sent = sock.send(item[2][item[3]:item[3] + 2048])
-                            item[3] += sent
-                            if not sent or item[3] >= len(item[2]):
+                            if isinstance(item[2], _HTTPStream):
+                                done = False
+                                for write in range(4):
+                                    done = item[2].send(sock)
+                                    if done:
+                                        break
+                            else:
+                                sent = sock.send(memoryview(item[2])[item[3]:item[3] + 2048])
+                                item[3] += sent
+                                done = not sent or item[3] >= len(item[2])
+                            item[1] = time.ticks_ms()
+                            if done:
                                 close_client(sock)
                     except OSError as exc:
                         # Una socket non bloccante puo non essere pronta anche
@@ -703,7 +810,7 @@ def run_ap(config, radio, radio_error=""):
                         if sock in clients:
                             close_client(sock)
                         gc.collect()
-                        print('Memoria insufficiente per HTTP; AP e comandi seriali mantenuti attivi')
+                        print('Memoria insufficiente per HTTP; rete e comandi seriali mantenuti attivi; heap:', getattr(gc, 'mem_free', lambda: 0)())
                     except Exception as exc:
                         # A failed page generation (including heap exhaustion) must not tear down the AP.
                         print('Errore richiesta HTTP:', type(exc).__name__, '| AP e seriale ancora attivi')
@@ -712,7 +819,7 @@ def run_ap(config, radio, radio_error=""):
                             close_client(sock)
                         gc.collect()
             for client in list(clients):
-                if time.ticks_diff(time.ticks_ms(), clients[client][1]) > 3000:
+                if time.ticks_diff(time.ticks_ms(), clients[client][1]) > 10000:
                     close_client(client)
             if "restart_requested" in state and not clients and time.ticks_diff(now, state["restart_requested"]) >= 1500:
                 import machine
@@ -724,5 +831,6 @@ def run_ap(config, radio, radio_error=""):
         for client in list(clients):
             close_client(client)
         server.close()
-        dns.close()
+        if dns is not None:
+            dns.close()
         ap.active(False)

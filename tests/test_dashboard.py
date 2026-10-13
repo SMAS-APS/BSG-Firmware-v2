@@ -52,6 +52,36 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(svc.state['restart_requested'], 123)
         save.assert_called_once()
 
+    def test_wunderground_save_returns_json_confirmation_before_restart(self):
+        svc = self.service()
+        svc.config['weather_underground'].update(station_id='ISTATION', station_key='private-wu')
+        form = dict(section='integrations', wu_enabled='on', wu_station_id='ISTATION',
+                    wu_station_key='', wu_mode='standard', wu_interval='10', wu_utc_offset='60', mqtt_ca_cert='')
+        with patch.object(wifi, 'save') as save:
+            response, data = self.request(svc, '/api/config', form)
+        self.assertTrue(response.startswith(b'HTTP/1.1 200'))
+        self.assertTrue(data['restart'])
+        self.assertEqual(svc.state['restart_requested'], 123)
+        self.assertTrue(svc.config['weather_underground']['enabled'])
+        self.assertNotIn(b'private-wu', response)
+        save.assert_called_once()
+
+    def test_network_status_reports_sta_with_ap_off_and_ap_after_disconnect(self):
+        svc = self.service()
+        svc.wlan.ifconfig.return_value = ('192.168.1.48', '255.255.255.0', '192.168.1.1', '192.168.1.1')
+        svc.clock.tick = Mock()
+        svc.clock.snapshot = Mock(return_value={})
+        svc.state['ap_active'] = False
+        svc.tick(0, True)
+        self.assertEqual(svc.state['network']['mode'], 'STA')
+        self.assertFalse(svc.state['network']['ap_active'])
+        self.assertIsNone(svc.state['network']['ap_ip'])
+        self.assertEqual(svc.state['network']['ip'], '192.168.1.48')
+        svc.state['ap_active'] = True
+        svc.tick(1, False)
+        self.assertEqual(svc.state['network']['mode'], 'AP')
+        self.assertEqual(svc.state['network']['ap_ip'], '192.168.4.1')
+
     def test_wifi_new_network_clears_previous_password_and_explicit_open_network(self):
         for ssid, extra in [('new', {}), ('home', {'clear_wifi_password': 'on'})]:
             svc = self.service()
@@ -83,8 +113,8 @@ class DashboardTests(unittest.TestCase):
         svc = self.service()
         for i in range(200):
             svc.log('x'*2000)
-        self.assertLessEqual(len(svc.lines), 120)
-        self.assertLessEqual(sum(len(line) for line in svc.lines), 12000)
+        self.assertLessEqual(len(svc.lines), 60)
+        self.assertLessEqual(sum(len(line) for line in svc.lines), 6000)
         self.assertLessEqual(len(svc.lines[-1]), 1000)
         response, _ = self.request(svc, '/api/terminal', dict(command="import os"))
         self.assertTrue(response.startswith(b'HTTP/1.1 400'))

@@ -4,10 +4,14 @@ import pathlib
 import tempfile
 import unittest
 import zipfile
+import builtins
+import types
+from unittest.mock import Mock, patch
 
 from amms.auth import _hmac_sha256
 
 import ota_boot
+import ota_runtime
 from ota_update import _canonical, verify_manifest
 from tools.build_ota_release import build_release
 
@@ -51,6 +55,29 @@ class OTABootTests(unittest.TestCase):
 
 
 class OTAManifestTests(unittest.TestCase):
+    def test_disabled_ota_does_not_import_https_agent(self):
+        original_import = builtins.__import__
+
+        def guarded(name, *args, **kwargs):
+            if name == 'ota_update':
+                raise AssertionError('Disabled OTA loaded HTTPS client')
+            return original_import(name, *args, **kwargs)
+
+        with patch('builtins.__import__', side_effect=guarded), patch.object(ota_runtime, 'set_reporter'):
+            self.assertIsNone(ota_runtime.start_updater({}))
+            self.assertIsNone(ota_runtime.start_updater({'updates': {'enabled': False}}))
+
+    def test_configured_ota_still_starts_and_registers_reporter(self):
+        agent = Mock()
+        config = {'amms': {'enabled': True, 'url': 'https://example.org/api',
+                          'auth_mode': 'hmac-sha256', 'station_id': 'one',
+                          'key_id': 'key', 'secret_hex': '12' * 32}}
+        module = types.SimpleNamespace(OTAUpdater=Mock(return_value=agent))
+        with patch.dict('sys.modules', {'ota_update': module}), patch.object(ota_runtime, 'set_reporter') as reporter:
+            self.assertIs(ota_runtime.start_updater(config), agent)
+        agent.start.assert_called_once()
+        reporter.assert_called_once_with(agent.report_boot_result)
+
     def test_signature_and_tampering(self):
         secret = "12" * 32
         document = {
@@ -80,6 +107,9 @@ class OTAManifestTests(unittest.TestCase):
             paths = {item["path"] for item in manifest["files"]}
             self.assertIn("main.py", paths)
             self.assertIn("modules/main_app.py", paths)
+            self.assertIn("dashboard.html.gz", paths)
+            self.assertIn("dashboard.static.html", paths)
+            self.assertIn("dashboard.etag", paths)
             self.assertFalse(any(path.startswith("modules/ota_") for path in paths))
             with zipfile.ZipFile(one) as archive:
                 self.assertIn("manifest.json", archive.namelist())

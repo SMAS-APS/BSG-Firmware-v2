@@ -80,10 +80,11 @@ def validate_image(image):
 def python_files():
     if not (PROJECT / "external/AMMSUtils/amms/__init__.py").is_file():
         raise RuntimeError("AMMSUtils mancante: git submodule update --init --recursive")
-    files = [(PROJECT / "boot.py", "/boot.py"), (PROJECT / "main.py", "/main.py"),
+    # Il loader e i moduli OTA nella radice aggiornano anche le immagini BSG
+    # precedenti al bootstrap A/B. Non sono modificabili dalle release OTA.
+    files = [(PROJECT / "boot.py", "/boot.py"), (PROJECT / "native/main.py", "/main.py"),
              (PROJECT / "main.py", "/ota/a/main.py")]
-    files += [(path, "/" + path.name) for path in sorted((PROJECT / "modules").glob("*.py"))
-              if not path.name.startswith("ota_")]
+    files += [(path, "/" + path.name) for path in sorted((PROJECT / "modules").glob("*.py"))]
     files += [(path, "/ota/a/modules/" + path.name) for path in sorted((PROJECT / "modules").glob("*.py"))
               if not path.name.startswith("ota_")]
     library = PROJECT / "external/AMMSUtils"
@@ -99,6 +100,9 @@ def python_files():
 def deploy(port):
     require("mpremote")
     files = python_files()
+    from tools.build_web_assets import build_assets
+    files += [(asset, prefix + '/' + asset.name)
+              for asset in build_assets(PROJECT) for prefix in ('', '/ota/a')]
     dirs = {str(Path(remote).parent).replace("\\", "/") for _, remote in files}
     dirs.update(("/ota", "/ota/a", "/ota/a/modules", "/ota/a/lib"))
     dirs.discard("/")

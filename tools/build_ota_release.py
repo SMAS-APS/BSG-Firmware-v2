@@ -7,13 +7,16 @@ import runpy
 import tempfile
 import zipfile
 import os
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def source_files(root):
+    from tools.build_web_assets import build_assets
     values = [(root / "main.py", "main.py")]
+    values += [(asset, asset.name) for asset in build_assets(root)]
     values += [(path, "modules/" + path.name) for path in sorted((root / "modules").glob("*.py"))
                if not path.name.startswith("ota_")]
     library = root / "external" / "AMMSUtils"
@@ -30,7 +33,8 @@ def build_release(root=ROOT, output=None, version=None):
     payload = []
     for source, relative in source_files(root):
         body = source.read_bytes()
-        compile(body.decode("utf-8"), str(source), "exec")
+        if source.suffix == ".py":
+            compile(body.decode("utf-8"), str(source), "exec")
         files.append({"path": relative, "size": len(body),
                       "sha256": hashlib.sha256(body).hexdigest()})
         payload.append((relative, body))
@@ -75,4 +79,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, str(ROOT))
     main()

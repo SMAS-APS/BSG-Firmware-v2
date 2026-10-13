@@ -38,7 +38,8 @@ def monitor(device, restart=True):
         if restart:
             print("Riavvio Python dopo la connessione: versione e avvio saranno visibili.", flush=True)
             restart_python(port)
-        print("Digita config e Invio per configurare il Wi-Fi: prima SSID, poi password (nascosta).", flush=True)
+        print("Con l'app avviata, digita config e Invio per configurare il Wi-Fi: prima SSID, poi password (nascosta).", flush=True)
+        print("Se vedi >>> sei nel REPL Python: config funziona solo mentre l'app e' in esecuzione.", flush=True)
         console = Console()
         console.enter()
         while True:

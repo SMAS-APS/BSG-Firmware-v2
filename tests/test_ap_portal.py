@@ -57,6 +57,43 @@ class APPortalTests(unittest.TestCase):
         self.assertIn(b"Content-Type: application/json", header)
         self.assertIn(("Content-Length: %d" % len(body)).encode(), header)
 
+    def test_redirect_uses_station_ip_when_ap_is_off(self):
+        response = wifi._ap_response(b'GET /connecttest.txt HTTP/1.1\r\n\r\n',
+                                     {'ap_active': False, 'network': {'ip': '192.168.1.48'}})
+        self.assertIn(b'Location: http://192.168.1.48/', response)
+        self.assertNotIn(b'192.168.4.1', response)
+
+    def test_captive_dns_closes_on_station_connection_and_reopens_after_loss(self):
+        station, ap, server, dns, reopened_dns, radio, poller = [Mock() for _ in range(7)]
+        recovery = types.SimpleNamespace(ap_enabled=True)
+        transitions = iter([False, True, False, False])
+
+        def tick(now, scanning):
+            recovery.ap_enabled = next(transitions)
+            return 'non connesso' if recovery.ap_enabled else 'connesso'
+
+        recovery.tick = tick
+        station.isconnected.side_effect = lambda: not recovery.ap_enabled
+        radio.poll.side_effect = [None, None, None, KeyboardInterrupt()]
+        radio.diagnostics.return_value = {}
+        poller.poll.return_value = []
+        uplink = types.SimpleNamespace(status='disabilitato', amms_status='disabilitato', submit=Mock(), stop=Mock())
+        with patch.object(wifi.network, 'WLAN', side_effect=[station, ap]), \
+             patch.object(wifi.socket, 'socket', side_effect=[server, dns, reopened_dns]), \
+             patch.object(wifi.select, 'poll', return_value=poller), \
+             patch.object(wifi.time, 'ticks_ms', return_value=100, create=True), \
+             patch.object(wifi.time, 'ticks_diff', side_effect=lambda a,b:a-b, create=True), \
+             patch.object(wifi, 'AutoReceiver', return_value=radio), patch.object(wifi, 'ReceiveLED'), \
+             patch.object(wifi, 'Uplink', return_value=uplink), \
+             patch('wifi_recovery.WifiRecovery', return_value=recovery), patch('builtins.print'):
+            with self.assertRaises(KeyboardInterrupt):
+                wifi.run_ap({'runtime': {}, 'wifi': {'ssid': 'home'}}, radio)
+        dns.close.assert_called_once()
+        reopened_dns.close.assert_called_once()
+        reopened_dns.bind.assert_called_with(('0.0.0.0', 53))
+        self.assertIn(((dns,), {}), poller.unregister.call_args_list)
+        self.assertIn(((reopened_dns, wifi.select.POLLIN), {}), poller.register.call_args_list)
+
     def test_dashboard_available_without_provisioning(self):
         response = wifi._ap_response(b"GET / HTTP/1.1\r\n\r\n", {})
         self.assertTrue(response.startswith(b"HTTP/1.1 200"))
@@ -87,13 +124,13 @@ class APPortalTests(unittest.TestCase):
         poller.poll.side_effect = [
             [(dns, wifi.select.POLLIN), (server, wifi.select.POLLIN)],
             [(client, wifi.select.POLLIN)], [(client, wifi.select.POLLOUT)],
-            [(client, wifi.select.POLLOUT)],
+            [(client, wifi.select.POLLOUT)], [(client, wifi.select.POLLOUT)], [], [],
         ]
         radio = Mock()
         radio.diagnostics.return_value = {"rx_active": True, "rssi_live": -100, "packets_seen": 1}
         radio.poll.side_effect = [
             {"temperature": 22, "wind_speed": 2, "sensor_id": 7},
-            None, None, None, KeyboardInterrupt(),
+            None, None, None, None, None, None, KeyboardInterrupt(),
         ]
         with patch.object(wifi.network, "WLAN", side_effect=[station, ap]), \
              patch.object(wifi.socket, "socket", side_effect=[server, dns]), \
@@ -106,10 +143,10 @@ class APPortalTests(unittest.TestCase):
              patch("builtins.print") as output:
             with self.assertRaises(KeyboardInterrupt):
                 wifi.run_ap({"runtime": {}}, radio)
-        self.assertEqual(radio.poll.call_count, 5)
-        self.assertEqual(client.send.call_count, 2)
+        self.assertEqual(radio.poll.call_count, 8)
+        self.assertGreaterEqual(client.send.call_count, 3)
         self.assertEqual(dns.sendto.call_args.args[0][-4:], b"\xc0\xa8\x04\x01")
-        response = client.send.call_args.args[0]
+        response = b''.join(bytes(data) for data in send_calls[1:])
         data = json.loads(response.split(b"\r\n\r\n", 1)[1])
         self.assertEqual(data["sensors"]["wind_speed"], 7.2)
         self.assertEqual(data["received"], 1)
@@ -145,6 +182,39 @@ class APPortalTests(unittest.TestCase):
         # Shutdown occurs only on the later deliberate KeyboardInterrupt.
         ap.active.assert_called_with(False)
 
+    def test_simultaneous_streams_are_writable_without_blocking_each_other(self):
+        station, ap, server, dns, first, second, radio, poller = [Mock() for _ in range(8)]
+        station.isconnected.return_value = False
+        server.accept.side_effect = [(first, ('192.168.4.2', 1)), (second, ('192.168.4.2', 2))]
+        first.recv.return_value = second.recv.return_value = b'GET / HTTP/1.1\r\n\r\n'
+        events = []
+        first.send.side_effect = lambda data: events.append('first-send') or len(data)
+        second.send.side_effect = lambda data: events.append('second-send') or len(data)
+        first.close.side_effect = lambda: events.append('first-close')
+        second.close.side_effect = lambda: events.append('second-close')
+        poller.poll.side_effect = [
+            [(server, wifi.select.POLLIN)], [(server, wifi.select.POLLIN)],
+            [(first, wifi.select.POLLIN), (second, wifi.select.POLLIN)],
+            [(first, wifi.select.POLLOUT)], [(first, wifi.select.POLLOUT)],
+            [(second, wifi.select.POLLOUT)], [(second, wifi.select.POLLOUT)],
+        ]
+        radio.poll.side_effect = [None] * 7 + [KeyboardInterrupt()]
+        radio.diagnostics.return_value = {}
+        uplink = types.SimpleNamespace(status='disabilitato', amms_status='disabilitato', submit=Mock(), stop=Mock())
+        with patch.object(wifi.network, 'WLAN', side_effect=[station, ap]), \
+             patch.object(wifi.socket, 'socket', side_effect=[server, dns]), \
+             patch.object(wifi.select, 'poll', return_value=poller), \
+             patch.object(wifi.time, 'ticks_ms', return_value=100, create=True), \
+             patch.object(wifi.time, 'ticks_diff', side_effect=lambda a, b: a-b, create=True), \
+             patch.object(wifi, 'AutoReceiver', return_value=radio), patch.object(wifi, 'ReceiveLED'), \
+             patch.object(wifi, 'Uplink', return_value=uplink), patch('builtins.print'), \
+             patch.object(wifi, '_ap_response', side_effect=[wifi._HTTPStream(iter([b'one'])), wifi._HTTPStream(iter([b'two']))]):
+            with self.assertRaises(KeyboardInterrupt):
+                wifi.run_ap({'runtime': {}}, radio)
+        self.assertEqual(events, ['first-send', 'first-close', 'second-send', 'second-close'])
+        self.assertIn(((second, wifi.select.POLLOUT), {}), poller.modify.call_args_list)
+        self.assertNotIn(((second, 0), {}), poller.modify.call_args_list)
+
     def test_unrecognized_frame_blinks_led_reports_error_and_keeps_receiving(self):
         server, dns, client = Mock(), Mock(), Mock()
         station, ap = Mock(), Mock()
@@ -166,7 +236,8 @@ class APPortalTests(unittest.TestCase):
              patch.object(wifi, "ReceiveLED", return_value=led), patch.object(wifi, "Uplink", return_value=uplink), patch("builtins.print") as output:
             with self.assertRaises(KeyboardInterrupt):
                 wifi.run_ap({"runtime": {}}, radio)
-        data = json.loads(client.send.call_args.args[0].split(b"\r\n\r\n", 1)[1])
+        response = b''.join(bytes(call.args[0]) for call in client.send.call_args_list)
+        data = json.loads(response.split(b"\r\n\r\n", 1)[1])
         self.assertEqual(data["unrecognized"], 1)
         self.assertEqual(data["received"], 1)
         self.assertEqual(data["error"], "")

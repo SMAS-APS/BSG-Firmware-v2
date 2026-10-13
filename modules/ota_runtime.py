@@ -46,6 +46,25 @@ def set_reporter(reporter):
     _flush_report()
 
 
+def start_updater(config):
+    # Avoid importing the HTTPS/TLS client and certificates when OTA is off.
+    amms = config.get("amms", {})
+    updates = config.get("updates", {})
+    endpoint = updates.get("server_url") or amms.get("url", "")
+    if not (updates.get("enabled", True) and amms.get("enabled")
+            and endpoint.startswith("https://")
+            and amms.get("auth_mode") == "hmac-sha256"
+            and amms.get("station_id") and amms.get("key_id")
+            and len(amms.get("secret_hex", "")) == 64):
+        set_reporter(None)
+        return None
+    from ota_update import OTAUpdater
+    updater = OTAUpdater(config)
+    set_reporter(updater.report_boot_result)
+    updater.start()
+    return updater
+
+
 def _flush_report():
     state = load_state()
     report = state.get("report_pending")

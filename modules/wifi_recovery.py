@@ -12,6 +12,20 @@ class WifiRecovery:
         self.status = 'non configurato'
         self.last_report = None
         self.last_channel = None
+        self.ap_enabled = bool(ap.active())
+
+    def _set_ap(self, enabled):
+        if self.ap_enabled == enabled:
+            return
+        self.ap.active(enabled)
+        if enabled:
+            self.ap.ifconfig(('192.168.4.1', '255.255.255.0', '192.168.4.1', '192.168.4.1'))
+            self.ap.config(ssid=self.config.get('runtime', {}).get('ap_ssid', 'Bresser Gateway'),
+                           security=0, channel=1, max_clients=4)
+        self.ap_enabled = enabled
+        self.last_channel = None
+        self.emit('AP riattivato: http://192.168.4.1' if enabled else
+                  'AP disattivato: connessione Wi-Fi al router attiva')
 
     def request_connect(self):
         self.force = True
@@ -20,11 +34,13 @@ class WifiRecovery:
     def tick(self, now, scanning=False):
         wifi = self.config.get('wifi', {})
         try:
-            channel = self.ap.config('channel')
-            if isinstance(channel, int) and channel != self.last_channel:
-                self.last_channel = channel
-                self.emit('AP: canale %d; AP e router condividono la radio' % channel)
             connected = self.wlan.isconnected()
+            self._set_ap(not connected or self.force)
+            if self.ap_enabled:
+                channel = self.ap.config('channel')
+                if isinstance(channel, int) and channel != self.last_channel:
+                    self.last_channel = channel
+                    self.emit('AP: canale %d; AP e router condividono la radio' % channel)
             if connected and not self.force:
                 self.status = 'connesso'
                 self.delay_ms = 30000
@@ -55,6 +71,10 @@ class WifiRecovery:
                     self.emit('Wi-Fi: tentativo di connessione; AP disponibile. Esito riportato sulla seriale.')
                     self.delay_ms = min(300000, self.delay_ms * 2)
         except OSError as exc:
+            try:
+                self._set_ap(True)
+            except OSError:
+                self.emit('AP: riattivazione non riuscita; riprovo al prossimo ciclo')
             self.status = 'errore connessione'
             self.last_attempt = now
             self.force = False
@@ -63,7 +83,7 @@ class WifiRecovery:
         if self.status != self.last_report:
             self.last_report = self.status
             if self.status == 'connesso':
-                self.emit('Wi-Fi connesso: http://%s | AP: http://192.168.4.1' % self.wlan.ifconfig()[0])
+                self.emit('Wi-Fi connesso: http://%s | AP disattivato (ripristino automatico)' % self.wlan.ifconfig()[0])
             else:
                 self.emit('Wi-Fi: ' + self.status)
         return self.status

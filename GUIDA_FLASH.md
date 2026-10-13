@@ -1,6 +1,6 @@
 # Installare MicroPython+Bresser e aggiornare il programma
 
-**Firmware 0.2.0 - test avanzato con ESP32, modulo RF e bootstrap OTA A/B.**
+**Firmware 0.2.1 - test avanzato con ESP32, modulo RF e bootstrap OTA A/B.**
 
 Nell'ambiente di test gia operativo usare normalmente il flash **senza `--erase`**
 e premere Invio alla richiesta CANCELLA, per conservare configurazione e dati.
@@ -37,6 +37,8 @@ Gli strumenti sono installati nell'ambiente Python ESP-IDF del PC.
 8. Scegli **4 - Monitor seriale**. Vedrai i messaggi a **115200 baud**.
 9. Collegati alla rete Wi-Fi **Bresser Gateway**. Il sistema puo aprire il
    captive portal automaticamente; altrimenti apri **http://192.168.4.1**.
+   L'AP si spegne quando la scheda si collega al router: usa da quel momento
+   l'IP indicato sulla seriale. Se il Wi-Fi viene perso, l'AP si riattiva da solo.
 
 Non serve avviare VS Code o un altro IDE per questa procedura.
 Nessun comando di flash viene eseguito automaticamente quando apri il menu.
@@ -82,6 +84,9 @@ Questo comando:
 
 - verifica che sulla scheda ci sia il firmware MicroPython+Bresser compatibile;
 - copia `boot.py`, `main.py`, i moduli applicativi e AMMSUtils;
+- prepara sul PC la dashboard HTML e gzip, poi le copia nella radice e nello
+  slot A; il server le invia dalla flash in blocchi da 512 byte senza renderizzare
+  la pagina nell'ESP32. I valori pubblici dei moduli si caricano tramite API;
 - sostituisce ogni file solo dopo che la sua copia temporanea e completa;
 - conserva `/config.json`, certificati e stato pluviometrico;
 - riavvia l'ESP32, che esegue il programma aggiornato.
@@ -93,6 +98,12 @@ Anche `boot.py` e `main.py` vengono eseguiti dal filesystem quando presenti.
 
 Il comando `deploy` della versione 0.2.0 prepara inoltre `/ota/a`, installa lo
 stato A/B e costituisce il bootstrap necessario per gli aggiornamenti remoti.
+Installa nella radice anche il loader e i tre moduli `ota_*`, per supportare
+le immagini MicroPython BSG compatibili che non li includono ancora.
+Se l'avvio fallisce con `ImportError: no module named 'ota_runtime'`, chiudi
+il monitor con Ctrl-] e ripeti `bsg.cmd deploy --port COM3` (o la tua porta).
+Riapri poi il monitor: `config` funziona durante l'esecuzione dell'app;
+al prompt `>>>` viene invece interpretato come codice Python.
 Da quel momento le release `.ammsfw` possono essere caricate e distribuite
 dalla console amministrativa AMMSServer. Il comando USB rimane la procedura di
 recupero e l'unico modo per aggiornare MicroPython o il driver radio nativo.

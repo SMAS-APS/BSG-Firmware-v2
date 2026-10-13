@@ -89,6 +89,9 @@ class BoardToolsTests(unittest.TestCase):
         self.assertLess(command.index(board.DEPLOY_VERIFY_CODE), command.index("fs"))
         self.assertNotIn(":/config.json", command)
         self.assertIn(":/main.py.bsg-tmp", command)
+        self.assertIn(":/dashboard.html.gz.bsg-tmp", command)
+        self.assertIn(":/ota/a/dashboard.static.html.bsg-tmp", command)
+        self.assertIn(":/ota/a/dashboard.etag.bsg-tmp", command)
         self.assertIn("import os; os.rename('/main.py.bsg-tmp', '/main.py')", command)
         self.assertEqual(command[-1], "import machine; machine.reset()")
 
@@ -100,6 +103,22 @@ class BoardToolsTests(unittest.TestCase):
         self.assertIn("/lib/amms/__init__.py", targets)
         self.assertNotIn("/config.json", targets)
         self.assertTrue(all(local.suffix == ".py" for local, _ in files))
+
+    def test_usb_deployment_bootstraps_ota_on_older_frozen_firmware(self):
+        files = dict((remote, local) for local, remote in board.python_files())
+        self.assertEqual(files["/main.py"], ROOT / "native/main.py")
+        self.assertEqual(files["/ota/a/main.py"], ROOT / "main.py")
+        for name in ("ota_boot.py", "ota_runtime.py", "ota_update.py"):
+            self.assertEqual(files["/" + name], ROOT / "modules" / name)
+            self.assertNotIn("/ota/a/modules/" + name, files)
+
+    def test_usb_main_dispatches_to_active_ota_slot(self):
+        loader = types.SimpleNamespace(boot=Mock())
+        with patch("os.stat"), \
+             patch("builtins.open", return_value=io.StringIO('{"schema": 1}')), \
+             patch.dict("sys.modules", {"ota_boot": loader}):
+            exec((ROOT / "native/main.py").read_text(), {})
+        loader.boot.assert_called_once()
 
     def test_frozen_main_honours_filesystem_main(self):
         context = {}

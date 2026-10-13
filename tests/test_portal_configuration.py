@@ -67,6 +67,30 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(cfg, original)
         self.assertNotEqual(ca.call_args.args[0], "/mqtt-ca.crt")
 
+    def test_wunderground_can_be_saved_with_disabled_amms_and_blank_ca_path(self):
+        cfg = self.config()
+        cfg['amms']['mqtt_ca_cert'] = ''
+        form = self.form()
+        form.pop('amms_enabled')
+        form.update(wu_mode='standard', mqtt_ca_cert='', transport='mqtt', url='http:\\bad', mqtt_host='http:\\bad')
+        with patch.object(wifi, 'save') as save:
+            wifi._save_ap_configuration(cfg, form)
+        self.assertTrue(cfg['weather_underground']['enabled'])
+        self.assertEqual(cfg['weather_underground']['station_key'], 'private-wu')
+        self.assertEqual(cfg['weather_underground']['mode'], 'standard')
+        self.assertFalse(cfg['amms']['enabled'])
+        self.assertEqual(cfg['amms']['mqtt_ca_cert'], '/mqtt-ca.crt')
+        save.assert_called_once()
+
+    def test_disabled_wu_fields_are_preserved_when_browser_omits_them(self):
+        cfg = self.config()
+        previous = cfg['weather_underground'].copy()
+        with patch.object(wifi, 'save'):
+            wifi._save_ap_configuration(cfg, dict(ssid='home', password=''))
+        self.assertFalse(cfg['weather_underground']['enabled'])
+        for name in ('station_id', 'station_key', 'mode', 'upload_interval_seconds'):
+            self.assertEqual(cfg['weather_underground'][name], previous[name])
+
     def test_invalid_hmac_or_bearer_mqtt_does_not_change_configuration(self):
         for changes in (dict(secret_hex="bad"), dict(transport="mqtt", auth_mode="bearer"), dict(mqtt_port="70000", transport="mqtt")):
             cfg = self.config()
