@@ -27,16 +27,45 @@ class MicroPythonMQTTPublisher:
         self.keepalive = int(keepalive)
         self.timeout_seconds = int(timeout_seconds)
         self._status_topic = status_topic(station_id).encode("utf-8")
+        self._update_topic = ("amms/v1/stations/%s/commands/update" % station_id).encode("utf-8")
         self._client = None
         self._connect()
 
-    @staticmethod
-    def _status(online):
+    def _status(self, online):
+        from bsg_runtime import FIRMWARE_BOARD, FIRMWARE_SCHEMA, FIRMWARE_VERSION, NATIVE_API, RF_DRIVER_REVISION
+        from ota_runtime import status as ota_status
         try:
-            value = json.dumps({"online": bool(online), "ts": int(time.time())}, separators=(",", ":"))
+            value = json.dumps({"online": bool(online), "ts": int(time.time()), "software": {
+                "target": "bsg-esp32", "version": FIRMWARE_VERSION,
+                "update_capable": True, "update_protocol": 2,
+                "board": FIRMWARE_BOARD, "firmware_schema": FIRMWARE_SCHEMA,
+                "native_api": NATIVE_API, "rf_driver_revision": RF_DRIVER_REVISION,
+                "ota": ota_status(),
+            }}, separators=(",", ":"))
         except TypeError:
-            value = json.dumps({"online": bool(online), "ts": int(time.time())})
+            value = json.dumps({"online": bool(online), "ts": int(time.time()), "software": {
+                "target": "bsg-esp32", "version": FIRMWARE_VERSION,
+                "update_capable": True, "update_protocol": 2,
+                "board": FIRMWARE_BOARD, "firmware_schema": FIRMWARE_SCHEMA,
+                "native_api": NATIVE_API, "rf_driver_revision": RF_DRIVER_REVISION,
+            }})
         return value.encode("utf-8")
+
+    def _on_message(self, topic, message):
+        if topic != self._update_topic:
+            return
+        try:
+            document = json.loads(message.decode("utf-8"))
+            if (not isinstance(document, dict) or document.get("target") != "bsg-esp32"
+                    or not isinstance(document.get("job_id"), str)):
+                return
+            temporary = "/ota-command.json.tmp"
+            with open(temporary, "w") as stream:
+                json.dump(document, stream)
+            import os
+            getattr(os, "replace", os.rename)(temporary, "/ota-command.json")
+        except Exception:
+            pass
 
     def _tls_context(self):
         with open(self.ca_cert, "rb") as stream:
@@ -77,8 +106,13 @@ class MicroPythonMQTTPublisher:
             except Exception:
                 pass
         self._client = self._new_client()
+        self._client.set_callback(self._on_message)
         self._client.connect(timeout=self.timeout_seconds)
+        self._client.subscribe(self._update_topic, qos=1)
         self._client.publish(self._status_topic, self._status(True), retain=True, qos=1)
+
+    def poll(self):
+        self._client.check_msg()
 
     def publish(self, topic, body, qos=1, retain=False):
         encoded_topic = topic.encode("utf-8") if isinstance(topic, str) else topic

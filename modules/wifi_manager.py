@@ -520,6 +520,11 @@ def run_ap(config, radio, radio_error=""):
     serial_commands = SerialCommands(config, recovery, service)
     serial_input = getattr(sys.stdin, 'buffer', sys.stdin)
     uplink = Uplink(config, wlan)
+    from ota_update import OTAUpdater
+    from ota_runtime import mark as mark_ota_health, status as ota_status, set_reporter, tick as ota_tick
+    updater = OTAUpdater(config)
+    set_reporter(updater.report_boot_result)
+    updater.start()
     started = time.ticks_ms()
     uptime_ms = 0
     previous_tick = started
@@ -544,6 +549,7 @@ def run_ap(config, radio, radio_error=""):
         dns.setblocking(False)
         poller.register(server, select.POLLIN)
         poller.register(dns, select.POLLIN)
+        mark_ota_health("network")
         try:
             poller.register(serial_input, select.POLLIN)
             print('Comandi seriali pronti: config per impostare SSID e password; help per i comandi.')
@@ -555,6 +561,7 @@ def run_ap(config, radio, radio_error=""):
         print("Autoriconoscimento Bresser 5-in-1 / 6-in-1 / 7-in-1 e varianti; 868.3 MHz FSK")
         while True:
             now = time.ticks_ms()
+            ota_tick(now)
             uptime_ms += max(0, time.ticks_diff(now, previous_tick))
             previous_tick = now
             state["uptime_seconds"] = uptime_ms // 1000
@@ -574,6 +581,8 @@ def run_ap(config, radio, radio_error=""):
             state["wifi_status"] = recovery.tick(now, service.scanning)
             state["wu_status"] = uplink.status
             state["amms_status"] = uplink.amms_status
+            state["ota"] = ota_status()
+            state["ota"]["agent_status"] = updater.status
             if not radio_error:
                 try:
                     reading = receiver.poll()

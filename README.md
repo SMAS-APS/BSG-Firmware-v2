@@ -1,4 +1,4 @@
-# BSG Firmware v2 - versione 0.1.0
+# BSG Firmware v2 - versione 0.2.0
 
 **Stato: test avanzato su ESP32-WROOM-32 con modulo RF collegato.**
 
@@ -19,7 +19,7 @@ Questo repository contiene il firmware ESP32 del gateway Bresser con:
 
 Il decoder Bresser 5-in-1 nativo e le estensioni MicroPython 6/7-in-1 sono implementati. Il driver nativo configura direttamente l'SX1276 in FSK a 868,3 MHz usando ESP-IDF, senza richiedere Arduino Core o RadioLib.
 
-Il firmware **0.1.0** e in fase di test avanzato sulla scheda ESP32-WROOM-32
+Il firmware **0.2.0** e in fase di test avanzato sulla scheda ESP32-WROOM-32
 con modulo RF collegato. Versione e fase sono riportate sulla seriale, nella
 dashboard e nell'API `/api/readings`. La ricezione di pacchetti reali, la
 stabilita e il captive portal vanno verificati durante le sessioni di test;
@@ -132,7 +132,7 @@ il modello commerciale della console. I messaggi alternati 6-in-1 vengono
 uniti per protocollo, ID e canale, con scadenza dei singoli campi a 120 secondi.
 Non vengono inventati vento o umidita per sensori che non li misurano.
 
-La seriale a 115200 baud stampa versione **0.1.0**, fase **test-avanzato**,
+La seriale a 115200 baud stampa versione **0.2.0**, fase **test-avanzato**,
 pin radio, famiglia, ID, canale, batteria, RSSI e misure ricevute. Un frame
 corrotto/non supportato stampa **ERRORE RF** e incrementa il contatore nella
 pagina; il ciclo continua a cercare. L'assenza di pacchetti significa attesa,
@@ -352,6 +352,37 @@ esistenti.
 La rete di configurazione locale di questa prima versione non e' cifrata. Per una
 stazione di produzione e' quindi preferibile copiare `/config.json` tramite collegamento
 USB/seriale; usare la pagina Web soltanto in un ambiente fisicamente controllato.
+
+## Aggiornamenti OTA sicuri
+
+La versione 0.2.0 introduce due slot applicativi LittleFS (`/ota/a` e
+`/ota/b`). Il loader, il verificatore e il codice di recupero sono congelati
+nel firmware nativo e non fanno parte dei pacchetti aggiornabili.
+
+Per abilitare OTA su una scheda gia' installata occorre una sola volta:
+
+```powershell
+python build_firmware.py build
+python bsg.py flash --port COM5
+python bsg.py deploy --port COM5
+```
+
+Le successive release applicative si creano con:
+
+```powershell
+python tools/build_ota_release.py --output dist/amms-bsg-0.2.0.ammsfw
+```
+
+Il file `.ammsfw` viene caricato nella console AMMSServer. La BSG scarica i
+file nello slot inattivo, verifica firma, compatibilita', dimensioni e SHA-256,
+quindi riavvia. Il nuovo slot viene confermato solo dopo radio funzionante,
+server HTTP locale avviato e prima pubblicazione AMMS riuscita. In assenza di
+conferma entro cinque minuti o dopo due avvii, il loader ripristina lo slot
+precedente. `config.json`, CA MQTT, stato WU e pioggia non appartengono agli slot.
+
+MicroPython, tabella partizioni, loader frozen e driver Bresser nativo richiedono
+ancora il collegamento USB; i requisiti nel manifest impediscono di installare
+un'applicazione incompatibile.
 
 ## Limiti iniziali
 

@@ -107,9 +107,20 @@ class Uplink:
                             client, transport = _build_client(self.config["amms"])
                         result = client.send(_payload_from_reading(reading), clear_on_success=False)
                         self.amms_status = "dati pubblicati via " + transport if result.ok else "invio rifiutato"
+                        if result.ok:
+                            from ota_runtime import mark
+                            mark("amms")
                     except Exception:
                         self.amms_status = "errore connessione AMMS"
                     print("AMMS:", self.amms_status)
+                if client is not None:
+                    publisher = getattr(client, "publisher", None)
+                    poll = getattr(publisher, "poll", None)
+                    if poll:
+                        try:
+                            poll()
+                        except OSError:
+                            pass
                 if wu_client and (last_wu is None or time.ticks_diff(now, last_wu) >= wu_client.upload_interval_seconds * 1000):
                     last_wu = now
                     try:

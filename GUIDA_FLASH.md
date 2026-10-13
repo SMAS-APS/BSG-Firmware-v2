@@ -1,6 +1,6 @@
 # Installare MicroPython+Bresser e aggiornare il programma
 
-**Firmware 0.1.0 - test avanzato con ESP32 e modulo RF collegato.**
+**Firmware 0.2.0 - test avanzato con ESP32, modulo RF e bootstrap OTA A/B.**
 
 Nell'ambiente di test gia operativo usare normalmente il flash **senza `--erase`**
 e premere Invio alla richiesta CANCELLA, per conservare configurazione e dati.
@@ -90,6 +90,12 @@ Questo comando:
 interrompe, ripeti il comando. La libreria radio rimane nell'interprete.
 I moduli Python nel filesystem hanno precedenza sulla copia inclusa nell'immagine.
 Anche `boot.py` e `main.py` vengono eseguiti dal filesystem quando presenti.
+
+Il comando `deploy` della versione 0.2.0 prepara inoltre `/ota/a`, installa lo
+stato A/B e costituisce il bootstrap necessario per gli aggiornamenti remoti.
+Da quel momento le release `.ammsfw` possono essere caricate e distribuite
+dalla console amministrativa AMMSServer. Il comando USB rimane la procedura di
+recupero e l'unico modo per aggiornare MicroPython o il driver radio nativo.
 In loro assenza viene avviata l'applicazione inclusa nel firmware.
 
 Non eseguire `main.py` con il Python del PC: `network`, `machine` e
@@ -169,7 +175,7 @@ senza pacchetti. Per osservare senza riavviare: `python serial_monitor.py --port
 2. Scegli **2** per flashare la nuova immagine, conservando configurazione e dati.
    Serve questo passaggio per correggere il driver nativo; la sola voce 3 non basta
    se la scheda ha ancora la revisione RF precedente.
-3. Scegli **4** e controlla versione 0.1.0, pinout e messaggio di autoriconoscimento.
+3. Scegli **4** e controlla versione 0.2.0, pinout e messaggio di autoriconoscimento.
 4. Collegati a **Bresser Gateway** e apri **http://192.168.4.1**.
 5. Configura Wi-Fi, Wunderground, AMMS e MQTT/TLS nella prima sezione della dashboard.
    Abilita i servizi desiderati, salva e riconnettiti all'AP dopo il riavvio.

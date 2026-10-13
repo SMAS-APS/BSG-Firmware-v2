@@ -17,6 +17,9 @@ freeze("modules", (
     "station_clock.py",
     "wifi_recovery.py",
     "serial_commands.py",
+    "ota_boot.py",
+    "ota_runtime.py",
+    "ota_update.py",
 ))
 
 freeze("external/AMMSUtils", (

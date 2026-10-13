@@ -49,6 +49,11 @@ DEFAULT_CONFIG = {
         "ntp_enabled": True, "ntp_server": "pool.ntp.org", "timezone": "Europe/Rome",
         "utc_offset_minutes": 60, "dst_auto": True, "sync_interval_seconds": 3600,
     },
+    "updates": {
+        "enabled": True,
+        "server_url": "",
+        "poll_interval_seconds": 60,
+    },
     "runtime": {
         "serial_interval_seconds": 10,
         "mode": "ap",

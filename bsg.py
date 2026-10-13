@@ -80,10 +80,16 @@ def validate_image(image):
 def python_files():
     if not (PROJECT / "external/AMMSUtils/amms/__init__.py").is_file():
         raise RuntimeError("AMMSUtils mancante: git submodule update --init --recursive")
-    files = [(PROJECT / "boot.py", "/boot.py"), (PROJECT / "main.py", "/main.py")]
-    files += [(path, "/" + path.name) for path in sorted((PROJECT / "modules").glob("*.py"))]
+    files = [(PROJECT / "boot.py", "/boot.py"), (PROJECT / "main.py", "/main.py"),
+             (PROJECT / "main.py", "/ota/a/main.py")]
+    files += [(path, "/" + path.name) for path in sorted((PROJECT / "modules").glob("*.py"))
+              if not path.name.startswith("ota_")]
+    files += [(path, "/ota/a/modules/" + path.name) for path in sorted((PROJECT / "modules").glob("*.py"))
+              if not path.name.startswith("ota_")]
     library = PROJECT / "external/AMMSUtils"
     files += [(path, "/lib/" + path.relative_to(library).as_posix())
+              for path in sorted((library / "amms").rglob("*.py"))]
+    files += [(path, "/ota/a/lib/" + path.relative_to(library).as_posix())
               for path in sorted((library / "amms").rglob("*.py"))]
     for path, _ in files:
         compile(path.read_text(encoding="utf-8"), str(path), "exec")
@@ -94,7 +100,7 @@ def deploy(port):
     require("mpremote")
     files = python_files()
     dirs = {str(Path(remote).parent).replace("\\", "/") for _, remote in files}
-    dirs.add("/lib")
+    dirs.update(("/ota", "/ota/a", "/ota/a/modules", "/ota/a/lib"))
     dirs.discard("/")
     mkdir_code = "import os\nfor path in %r:\n try:\n  os.mkdir(path)\n except OSError as e:\n  if e.args[0] != 17: raise\n" % (
         tuple(sorted(dirs, key=lambda value: (value.count("/"), value))),)
@@ -105,9 +111,16 @@ def deploy(port):
         temporary = remote + ".bsg-tmp"
         command += ["fs", "cp", local, ":" + temporary, "+", "exec",
                     "import os; os.rename(%r, %r)" % (temporary, remote), "+"]
-    command += ["exec", "--no-follow", "import machine; machine.reset()"]
+    bootstrap = ("import json,os\n"
+                 "s={'schema':1,'active':'a','previous':None,'pending':None,'attempts':0,"
+                 "'version':%r,'versions':{'a':%r},'last_result':'usb-bootstrap'}\n"
+                 "f=open('/ota-state.json.tmp','w');json.dump(s,f);f.close();"
+                 "getattr(os,'replace',os.rename)('/ota-state.json.tmp','/ota-state.json')" %
+                 ((lambda value: (value, value))(
+                     runpy.run_path(str(PROJECT / "modules/bsg_runtime.py"))["FIRMWARE_VERSION"])))
+    command += ["exec", bootstrap, "+", "exec", "--no-follow", "import machine; machine.reset()"]
     run(command)
-    print("File Python aggiornati e scheda riavviata. Configurazione e credenziali conservate.")
+    print("Bootstrap OTA A/B installato nello slot A. Configurazione e credenziali conservate.")
 
 
 def flash(port, image=DEFAULT_IMAGE, erase=False):

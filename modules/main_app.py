@@ -100,13 +100,19 @@ def _build_weather_underground(config):
 def run():
     print("Bresser Gateway firmware %s (%s)" % (FIRMWARE_VERSION, FIRMWARE_STAGE))
     config = load()
+    from ota_runtime import initialize_version
+    initialize_version(FIRMWARE_VERSION)
     radio_error = ""
     try:
         _init_radio(config["radio"])
+        from ota_runtime import mark
+        mark("radio")
     except Exception as exc:
         radio_error = str(exc)
         print("Errore ricevitore:", radio_error)
     try:
+        from ota_runtime import start_guard
+        start_guard(300)
         wifi_manager.run_ap(config, bresser_native, radio_error)
     finally:
         bresser_native.deinit()

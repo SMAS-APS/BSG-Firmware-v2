@@ -57,5 +57,10 @@
     "utc_offset_minutes": 60,
     "dst_auto": true,
     "sync_interval_seconds": 3600
+  },
+  "updates": {
+    "enabled": true,
+    "server_url": "",
+    "poll_interval_seconds": 60
   }
 }
