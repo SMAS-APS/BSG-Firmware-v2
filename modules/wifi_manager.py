@@ -296,41 +296,68 @@ def _save_ap_configuration(config, form):
     if wu["enabled"] and not ssid:
         raise ValueError("per Weather Underground serve una rete Wi-Fi")
     validate_weather_underground(candidate)
-    amms = candidate["amms"]
-    amms["enabled"] = form.get("amms_enabled") == "on"
-    for key in ("transport", "auth_mode", "station_id", "key_id", "url", "mqtt_host", "mqtt_ca_cert"):
-        if key in form:
-            value = form[key].strip()
-            if key == "mqtt_ca_cert" and not value:
-                continue  # Blank optional path keeps the configured/default CA.
-            amms[key] = value
-    for key in ("secret_hex", "token"):
-        if form.get(key):
-            amms[key] = form[key].strip()
-    amms["mqtt_port"] = int(form.get("mqtt_port", str(amms.get("mqtt_port", 8883))))
-    amms["mqtt_keepalive"] = int(form.get("mqtt_keepalive", str(amms.get("mqtt_keepalive", 45))))
-    amms["timeout_seconds"] = int(form.get("timeout_seconds", str(amms.get("timeout_seconds", 15))))
-    amms["upload_interval_seconds"] = int(form.get("amms_interval", str(amms.get("upload_interval_seconds", 10))))
-    cert_path = amms.get("mqtt_ca_cert") or "/mqtt-ca.crt"
-    amms["mqtt_ca_cert"] = cert_path
-    if not cert_path.startswith("/") or ".." in cert_path or not cert_path.endswith(".crt") or len(cert_path) > 96:
-        raise ValueError("percorso certificato CA non valido")
-    pem = form.get("mqtt_ca_pem", "").strip()
-    if pem:
-        if len(pem) > 4096 or "-----BEGIN CERTIFICATE-----" not in pem or "-----END CERTIFICATE-----" not in pem:
-            raise ValueError("certificato CA non valido")
-        # Mantiene intatta la vecchia CA se il successivo salvataggio fallisce.
-        import hashlib
-        import binascii
-        suffix = binascii.hexlify(hashlib.sha256(pem.encode()).digest()).decode()[:16]
-        cert_path = "/mqtt-ca-" + suffix + ".crt"
+    activation_key = form.get("activation_key", "").strip()
+    server_url = form.get(
+        "activation_server_url",
+        candidate.get("activation", {}).get("server_url", "https://151.242.0.96"),
+    ).strip()
+    if "activation" not in candidate:
+        candidate["activation"] = {"server_url": "https://151.242.0.96"}
+    if activation_key:
+        if not ssid:
+            raise ValueError("l'attivazione AMMS richiede una rete Wi-Fi")
+        from activation_service import validate_request
+        activation_key, server_url = validate_request(activation_key, server_url)
+    elif not server_url.startswith("https://"):
+        raise ValueError("il server AMMS deve usare HTTPS")
+    candidate["activation"]["server_url"] = server_url
+
+    # Mantiene il vecchio percorso manuale per richieste/API precedenti, ma il
+    # portale ordinario non espone piu' identita', segreti o broker.
+    manual_fields = any(
+        key in form for key in
+        ("amms_enabled", "transport", "auth_mode", "station_id", "key_id", "url",
+         "mqtt_host", "mqtt_ca_cert", "secret_hex", "token")
+    )
+    if manual_fields:
+        amms = candidate["amms"]
+        amms["enabled"] = form.get("amms_enabled") == "on"
+        for key in ("transport", "auth_mode", "station_id", "key_id", "url", "mqtt_host", "mqtt_ca_cert"):
+            if key in form:
+                value = form[key].strip()
+                if key == "mqtt_ca_cert" and not value:
+                    continue
+                amms[key] = value
+        for key in ("secret_hex", "token"):
+            if form.get(key):
+                amms[key] = form[key].strip()
+        amms["mqtt_port"] = int(form.get("mqtt_port", str(amms.get("mqtt_port", 8883))))
+        amms["mqtt_keepalive"] = int(form.get("mqtt_keepalive", str(amms.get("mqtt_keepalive", 45))))
+        amms["timeout_seconds"] = int(form.get("timeout_seconds", str(amms.get("timeout_seconds", 15))))
+        amms["upload_interval_seconds"] = int(form.get("amms_interval", str(amms.get("upload_interval_seconds", 10))))
+        cert_path = amms.get("mqtt_ca_cert") or "/mqtt-ca.crt"
         amms["mqtt_ca_cert"] = cert_path
-    validate_amms(candidate, certificate_available=bool(pem) or _file_exists(cert_path))
-    if pem:
-        _save_mqtt_ca(cert_path, pem)
+        if not cert_path.startswith("/") or ".." in cert_path or not cert_path.endswith(".crt") or len(cert_path) > 96:
+            raise ValueError("percorso certificato CA non valido")
+        pem = form.get("mqtt_ca_pem", "").strip()
+        if pem:
+            if len(pem) > 4096 or "-----BEGIN CERTIFICATE-----" not in pem or "-----END CERTIFICATE-----" not in pem:
+                raise ValueError("certificato CA non valido")
+            import hashlib
+            import binascii
+            suffix = binascii.hexlify(hashlib.sha256(pem.encode()).digest()).decode()[:16]
+            cert_path = "/mqtt-ca-" + suffix + ".crt"
+            amms["mqtt_ca_cert"] = cert_path
+        validate_amms(candidate, certificate_available=bool(pem) or _file_exists(cert_path))
+        if pem:
+            _save_mqtt_ca(cert_path, pem)
     candidate["runtime"]["mode"] = "ap"
     save(candidate)
     config.update(candidate)
+    if activation_key:
+        from activation_service import queue_activation
+        queue_activation(activation_key, server_url)
+    return bool(activation_key)
 
 
 def _request_complete(request):
@@ -581,6 +608,8 @@ def run_ap(config, radio, radio_error=""):
     from dashboard_service import DashboardService
     service = DashboardService(config, wlan, state)
     service.radio = radio
+    from activation_service import start_activation_service
+    service.activation = start_activation_service(config, wlan, state)
     from wifi_recovery import WifiRecovery
     from serial_commands import SerialCommands
     recovery = WifiRecovery(config, wlan, ap)

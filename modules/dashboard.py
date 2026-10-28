@@ -22,18 +22,13 @@ def _values(config, integration_form, escape):
     offset_start = wu.index('<label>Scostamento UTC per pioggia giornaliera')
     offset_end = wu.index('</label>', offset_start) + len('</label>')
     wu = wu[:offset_start] + '<input type="hidden" name="wu_utc_offset" value="%s"><p class="hint">La pioggia giornaliera usa il fuso orario e il cambio automatico dell’ora impostati in Data e ora.</p>' % escape(config.get('weather_underground', {}).get('utc_offset_minutes', 60)) + wu[offset_end:]
-    amms, mqtt = amms.split('<label>Server MQTT', 1)
-    mqtt = '<label>Server MQTT' + mqtt
-    note_start = mqtt.index('<small>MQTT mantiene')
-    mqtt = mqtt[:note_start] + '<p class="hint">MQTT usa ID stazione e chiave HMAC configurati nella colonna AMMS. Seleziona MQTT/TLS nel campo Trasporto per utilizzare questo servizio.</p>'
     wu = wu.replace('<h3>Weather Underground</h3>', '<h2>Wunderground</h2>')
     integrations = ('<form id="configuration"><input name="section" type="hidden" value="integrations">'
         '<div class="grid integration-grid">'
         '<article id="service-wunderground" class="panel">' + wu + '</article>'
-        '<article id="service-amms" class="panel"><h2>AMMS</h2>' + amms + '</article>'
-        '<article id="service-mqtt" class="panel"><h2>MQTT</h2>' + mqtt + '</article></div>'
+        '<article id="service-amms" class="panel"><h2>AMMS</h2>' + amms + '</article></div>'
         '<p><button class="primary">Salva servizi</button></p>'
-        '<p class="hint">Campi segreti vuoti: conserva i valori salvati. Le modifiche ai servizi richiedono il riavvio.</p></form>')
+        '<p class="hint">La chiave non viene mai restituita dal portale. L’attivazione prosegue in background senza interrompere la ricezione radio.</p></form>')
     options = ''.join('<option value="%d" %s>%s</option>' % (n, 'selected' if n == runtime.get('serial_interval_seconds', 10) else '', str(n)+' s' if n else 'Disattivato') for n in (0, 1, 5, 10, 30, 60))
     wifi = config.get('wifi', {})
     return {

@@ -26,14 +26,16 @@ class ConfigurationTests(unittest.TestCase):
                     secret_hex="", token="", url="https://example.org/api/data/point", mqtt_host="broker.example.org",
                     mqtt_port="8883", mqtt_keepalive="45", mqtt_ca_cert="/mqtt-ca.crt", timeout_seconds="10", amms_interval="15")
 
-    def test_dashboard_has_separate_pages_and_every_original_remote_setting(self):
+    def test_dashboard_exposes_only_activation_key_and_advanced_server_for_amms(self):
         cfg = self.config()
         html = wifi._dashboard(cfg)
         for page in ("status", "wifi", "config", "terminal"):
             self.assertIn('id="page-%s"' % page, html)
-        for name in self.form():
+        for name in ("wu_enabled", "wu_station_id", "wu_station_key", "wu_mode", "wu_interval",
+                     "activation_key", "activation_server_url"):
             self.assertIn('name="%s"' % name, html)
-        self.assertIn('name="mqtt_ca_pem"', html)
+        for name in ("station_id", "key_id", "secret_hex", "mqtt_host", "mqtt_ca_pem"):
+            self.assertNotIn('name="%s"' % name, html)
         for secret in ("private-wifi", "private-wu", "private-token", "ab" * 32):
             self.assertNotIn(secret, html)
 
@@ -55,6 +57,23 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(cfg["weather_underground"]["station_key"], "private-wu")
         self.assertEqual(cfg["runtime"]["mode"], "ap")
         save.assert_called_once()
+
+    def test_activation_request_preserves_current_identity_and_is_queued(self):
+        cfg = self.config()
+        previous = copy.deepcopy(cfg["amms"])
+        service = types.SimpleNamespace(
+            validate_request=lambda key, server: (key.upper(), server.rstrip("/")),
+            queue_activation=Mock(),
+        )
+        form = dict(
+            ssid="home", password="", activation_key="amms-test",
+            activation_server_url="https://151.242.0.96/",
+        )
+        with patch.dict("sys.modules", {"activation_service": service}), patch.object(wifi, "save"):
+            self.assertTrue(wifi._save_ap_configuration(cfg, form))
+        self.assertEqual(cfg["amms"], previous)
+        self.assertEqual(cfg["activation"]["server_url"], "https://151.242.0.96")
+        service.queue_activation.assert_called_once_with("AMMS-TEST", "https://151.242.0.96")
 
     def test_new_mqtt_ca_does_not_overwrite_previous_ca_before_commit(self):
         cfg = self.config()

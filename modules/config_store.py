@@ -18,12 +18,15 @@ DEFAULT_CONFIG = {
         "key_id": "",
         "secret_hex": "",
         "token": "",
-        "url": "https://weather.iacca.ml/api/data/point",
+        "url": "https://151.242.0.96/api/data/point",
         "timeout_seconds": 15,
-        "mqtt_host": "weather.iacca.ml",
+        "mqtt_host": "151.242.0.96",
         "mqtt_port": 8883,
         "mqtt_keepalive": 45,
         "mqtt_ca_cert": "/mqtt-ca.crt",
+    },
+    "activation": {
+        "server_url": "https://151.242.0.96",
     },
     "radio": {
         "spi_host": 1,

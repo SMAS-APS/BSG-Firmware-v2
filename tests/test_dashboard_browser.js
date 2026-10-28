@@ -54,12 +54,11 @@ function settingsFields() {
   const names = {
     'wifi-form': ['ssid', 'network_hidden', 'clear_wifi_password', 'password'],
     configuration: ['wu_enabled', 'wu_station_id', 'wu_station_key', 'wu_mode', 'wu_interval', 'wu_utc_offset',
-                    'amms_enabled', 'transport', 'auth_mode', 'station_id', 'key_id', 'url', 'timeout_seconds',
-                    'amms_interval', 'mqtt_host', 'mqtt_port', 'mqtt_keepalive', 'mqtt_ca_cert', 'secret_hex', 'token'],
+                    'activation_key', 'activation_server_url'],
     'clock-form': ['timezone', 'ntp_enabled', 'dst_auto'],
     'runtime-form': ['poll_interval_ms', 'serial_interval_seconds'],
   };
-  const checkboxes = ['wu_enabled', 'amms_enabled', 'network_hidden', 'clear_wifi_password', 'ntp_enabled', 'dst_auto'];
+  const checkboxes = ['wu_enabled', 'network_hidden', 'clear_wifi_password', 'ntp_enabled', 'dst_auto'];
   const forms = Object.fromEntries(Object.entries(names).map(([id, values]) => [id, {elements:
     Object.fromEntries(values.map(name => [name, {name, type: checkboxes.includes(name) ? 'checkbox' : 'text', value: '', checked: false}]))}]));
   const fields = Object.values(forms.configuration.elements);
@@ -72,7 +71,7 @@ function settingsFields() {
   context.settings = {
     wifi: {ssid: 'Casa <&>', has_password: true, password: 'must-not-fill'},
     weather_underground: {enabled: true, station_id: 'ISTATION', mode: 'standard', upload_interval_seconds: 10, station_key: 'must-not-fill'},
-    amms: {enabled: false, transport: 'mqtt', url: 'invalid URL', secret_hex: 'must-not-fill'},
+    activation: {server_url: 'https://151.242.0.96'},
     runtime: {poll_interval_ms: 25, serial_interval_seconds: 10}, clock: {timezone: 'Europe/Rome'},
   };
   vm.runInContext('applySettings(settings)', context);
@@ -80,10 +79,9 @@ function settingsFields() {
   assert.equal(forms.configuration.elements.wu_station_id.value, 'ISTATION');
   assert.equal(forms.configuration.elements.wu_enabled.checked, true);
   assert.equal(forms.configuration.elements.wu_station_id.disabled, false);
-  assert.equal(forms.configuration.elements.url.disabled, true);
-  assert.equal(forms.configuration.elements.amms_enabled.disabled, undefined);
   assert.equal(forms.configuration.elements.wu_station_key.value, '');
-  assert.equal(forms.configuration.elements.secret_hex.value, '');
+  assert.equal(forms.configuration.elements.activation_key.value, '');
+  assert.equal(forms.configuration.elements.activation_server_url.value, 'https://151.242.0.96');
   assert.equal(forms['wifi-form'].elements.password.value, '');
 }
 

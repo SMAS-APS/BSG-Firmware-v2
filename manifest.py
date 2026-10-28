@@ -20,11 +20,13 @@ freeze("modules", (
     "ota_boot.py",
     "ota_runtime.py",
     "ota_update.py",
+    "activation_service.py",
 ))
 
 freeze("external/AMMSUtils", (
     "amms/__init__.py",
     "amms/auth.py",
+    "amms/activation.py",
     "amms/client.py",
     "amms/credentials.py",
     "amms/payload.py",

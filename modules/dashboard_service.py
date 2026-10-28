@@ -36,6 +36,7 @@ class DashboardService:
             'weather_underground': ('enabled', 'station_id', 'mode', 'upload_interval_seconds', 'utc_offset_minutes'),
             'amms': ('enabled', 'transport', 'auth_mode', 'station_id', 'key_id', 'url', 'timeout_seconds',
                      'upload_interval_seconds', 'mqtt_host', 'mqtt_port', 'mqtt_keepalive', 'mqtt_ca_cert'),
+            'activation': ('server_url',),
             'clock': tuple(DEFAULT_CLOCK),
             'runtime': ('poll_interval_ms', 'serial_interval_seconds'),
         }
@@ -109,8 +110,10 @@ class DashboardService:
         elif section == 'integrations':
             merged = dict(form)
             merged.update(ssid=candidate['wifi']['ssid'], password='')
-            save_integrations(candidate, merged)
+            activation_pending = bool(save_integrations(candidate, merged))
             self.config.update(candidate)
+            if activation_pending:
+                return dict(message='Chiave salvata. Attivazione AMMS in corso in background…', restart=False)
             self.state['restart_requested'] = time.ticks_ms()
             return dict(message='Servizi salvati. Riavvio in corso…', restart=True)
         else:
